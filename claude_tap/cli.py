@@ -25,6 +25,7 @@ import threading
 import webbrowser
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import web
@@ -457,7 +458,7 @@ async def _run_pipeline_async(args: argparse.Namespace, *, launch_client: bool) 
     bus.subscribe(jsonl)
     bus.subscribe(stats)
 
-    session = aiohttp.ClientSession(auto_decompress=False, trust_env=True)
+    session = aiohttp.ClientSession(auto_decompress=False, trust_env=_target_allows_env_proxy(target))
 
     forward_server: ForwardProxyServer | None = None
     web_runner: web.AppRunner | None = None
@@ -614,6 +615,13 @@ def _export_prompt_from_trace(trace_path: Path, output: str) -> int:
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
     return export(trace_path, output=out_path, fmt="prompt-md")
+
+
+def _target_allows_env_proxy(target: str) -> bool:
+    host = urlparse(target).hostname
+    if host is None:
+        return True
+    return host.lower() not in {"127.0.0.1", "::1", "localhost"}
 
 
 def _path_relative_to(path: Path, base: Path) -> str | None:

@@ -15,6 +15,7 @@ from claude_tap.cli import (
     _normalise_command,
     _resolve_live_default,
     _split_forward,
+    _target_allows_env_proxy,
     build_parser,
     resolve_target_and_mode,
 )
@@ -116,6 +117,13 @@ def test_run_export_prompt_path(parser):
     args = parser.parse_args(["run", "gemini", "--export-prompt", "prompt.md"])
     assert args.client == "gemini"
     assert args.export_prompt == "prompt.md"
+
+
+def test_local_targets_do_not_use_outer_env_proxy():
+    assert not _target_allows_env_proxy("http://127.0.0.1:1234")
+    assert not _target_allows_env_proxy("http://localhost:1234")
+    assert not _target_allows_env_proxy("http://[::1]:1234")
+    assert _target_allows_env_proxy("https://api.anthropic.com")
 
 
 def test_run_live_short_form(parser):
