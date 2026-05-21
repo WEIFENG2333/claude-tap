@@ -23,7 +23,7 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from claude_tap.protocols import ANTHROPIC, GEMINI, OPENAI, PASSTHROUGH, Protocol
 
@@ -77,6 +77,7 @@ class Client:
     # (default; turned off by ``--no-yolo``). Empty tuple means the CLI has
     # no single-flag yolo path; we'll print a note instead of failing.
     yolo_args: tuple[str, ...] = ()
+    yolo_args_position: Literal["prepend", "after-first-arg"] = "prepend"
 
     # Read the user's configured upstream URL from env / config files. Returns
     # ``None`` if the user has not customized it. Used as the proxy's upstream
@@ -808,6 +809,7 @@ OPENCODE = Client(
     # opencode's run subcommand has --dangerously-skip-permissions; the
     # top-level (interactive TUI) honours the same flag.
     yolo_args=("--dangerously-skip-permissions",),
+    yolo_args_position="after-first-arg",
 )
 
 
@@ -887,6 +889,7 @@ DEVIN = Client(
     protocols=(PASSTHROUGH,),
     # Rust binary using rustls — no env-based redirect works. Forward mode +
     # OS-level CA install is the only path.
+    env_redirect_reliable=False,
     detect_auth=_devin_auth,
     # Devin uses ``--permission-mode <mode>`` with values "auto" (read-only
     # auto-approve) and "dangerous" (full auto-approve).

@@ -15,6 +15,15 @@ from claude_tap.clients import Client
 
 log = logging.getLogger("claude_tap")
 
+_PROXY_ENV_VARS = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+
 
 def _install_forward_proxy_env(env: dict[str, str], proxy_url: str, ca_cert_path: Path | None) -> None:
     """Inject ``HTTPS_PROXY`` (all standard variants) and CA-trust env vars.
@@ -25,7 +34,7 @@ def _install_forward_proxy_env(env: dict[str, str], proxy_url: str, ca_cert_path
       - ``REQUESTS_CA_BUNDLE`` — Python ``requests`` library
     """
 
-    for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+    for k in _PROXY_ENV_VARS:
         env[k] = proxy_url
     env["NO_PROXY"] = "127.0.0.1,localhost"
     if ca_cert_path:
@@ -49,6 +58,22 @@ def _claude_settings_arg(proxy_url: str, ca_cert_path: Path | None) -> list[str]
     if ca_cert_path:
         payload["env"]["NODE_EXTRA_CA_CERTS"] = str(ca_cert_path)
     return ["--settings", json.dumps(payload, separators=(",", ":"))]
+
+
+def _strip_proxy_env_for_reverse(env: dict[str, str]) -> None:
+    """Avoid sending localhost reverse-proxy traffic through an outer proxy.
+
+    In reverse mode the child client should connect directly to claude-tap's
+    local base URL. Some runtimes do not honor NO_PROXY reliably for localhost
+    once HTTP_PROXY/ALL_PROXY are present, so remove inherited proxy variables
+    from the child process. The claude-tap parent still keeps its own proxy env
+    and can use it for outbound upstream traffic.
+    """
+
+    for key in _PROXY_ENV_VARS:
+        env.pop(key, None)
+    env["NO_PROXY"] = "127.0.0.1,localhost"
+    env["no_proxy"] = "127.0.0.1,localhost"
 
 
 async def run_client(
@@ -90,7 +115,7 @@ async def run_client(
             if not has_settings:
                 cmd_args = _claude_settings_arg(proxy_url, ca_cert_path) + cmd_args
     else:
-        env["NO_PROXY"] = "127.0.0.1"
+        _strip_proxy_env_for_reverse(env)
         redirect_env = client.env_overrides(proxy_url)
         env.update(redirect_env)
         # Some clients (codex) ignore env-based base-URL overrides and need
@@ -104,9 +129,14 @@ async def run_client(
     yolo_args: list[str] = []
     if yolo:
         if client.yolo_args:
-            # Prepend so user-supplied forward_args win on conflict.
             yolo_args = list(client.yolo_args)
-            cmd_args = yolo_args + cmd_args
+            if client.yolo_args_position == "after-first-arg" and cmd_args:
+                # Some CLIs put global options after their subcommand.
+                cmd_args = [cmd_args[0], *yolo_args, *cmd_args[1:]]
+            else:
+                # Default to leading flags so user-supplied args can override
+                # later when the child CLI resolves conflicts by last value.
+                cmd_args = yolo_args + cmd_args
         else:
             sys.stdout.write(
                 f"[claude-tap] note: {client.label} has no single-flag yolo mode; "

@@ -43,6 +43,12 @@ def test_cli_export_markdown_via_module(tmp_path: Path, sample_jsonl: Path):
     assert "Turn 1" in p.stdout
 
 
+def test_cli_module_propagates_nonzero_return_code(tmp_path: Path):
+    p = _run_cli("export", str(tmp_path / "missing.jsonl"), cwd=tmp_path)
+    assert p.returncode == 1
+    assert "not found" in p.stderr
+
+
 def test_cli_export_json(tmp_path: Path, sample_jsonl: Path):
     out = tmp_path / "out.json"
     p = _run_cli("export", str(sample_jsonl), "-o", str(out), cwd=tmp_path)

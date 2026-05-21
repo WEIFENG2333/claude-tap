@@ -1,4 +1,4 @@
-"""Render a trace JSONL file as Markdown / JSON / standalone HTML."""
+"""Render a trace JSONL file as Markdown / JSON / prompt Markdown / HTML."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from claude_tap.prompt_snapshot import render_prompt_markdown, snapshot_from_records
 from claude_tap.viewer import render_html
 
 
@@ -42,14 +43,25 @@ def export(
         sys.stdout.write(f"wrote {html_path}\n")
         return 0
 
-    text = _to_json(records) if fmt == "json" else _to_markdown(records)
+    is_prompt_snapshot = fmt == "prompt-md"
+    if is_prompt_snapshot:
+        try:
+            text = render_prompt_markdown(snapshot_from_records(records))
+        except ValueError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            return 1
+    else:
+        text = _to_json(records) if fmt == "json" else _to_markdown(records)
     if output is None or str(output) == "-":
         sys.stdout.write(text)
         if not text.endswith("\n"):
             sys.stdout.write("\n")
     else:
         output.write_text(text, encoding="utf-8")
-        sys.stdout.write(f"exported {len(records)} turns to {output}\n")
+        if is_prompt_snapshot:
+            sys.stdout.write(f"exported prompt snapshot to {output}\n")
+        else:
+            sys.stdout.write(f"exported {len(records)} turns to {output}\n")
     return 0
 
 
@@ -69,6 +81,9 @@ def _load_jsonl_lines(stream) -> list[dict]:
 def _infer_format(output: Path | None) -> str:
     if output is None:
         return "markdown"
+    name = output.name.lower()
+    if name.endswith((".prompt.md", ".prompt.markdown", ".system.md", ".system.markdown")):
+        return "prompt-md"
     suffix = output.suffix.lower()
     if suffix == ".json":
         return "json"

@@ -136,6 +136,42 @@ async def test_reverse_proxy_blocks_unknown_path(trace_dir: Path):
     assert written.strip() == ""
 
 
+async def test_reverse_proxy_records_request_when_upstream_fails(trace_dir: Path):
+    bus = EventBus()
+    jsonl_path = trace_dir / "trace.jsonl"
+    stats = StatsSink((ANTHROPIC,))
+    bus.subscribe(JsonlSink(jsonl_path))
+    bus.subscribe(stats)
+
+    session = aiohttp.ClientSession(auto_decompress=False)
+    ctx = ProxyContext(
+        protocols=(ANTHROPIC,),
+        target="http://127.0.0.1:1",  # unreachable, intentional
+        bus=bus,
+        session=session,
+    )
+    proxy_runner, proxy_port = await _start("127.0.0.1", 0, build_app(ctx))
+
+    try:
+        async with aiohttp.ClientSession() as client:
+            async with client.post(
+                f"http://127.0.0.1:{proxy_port}/v1/messages",
+                json={"model": "claude-test", "messages": [{"role": "user", "content": "preserve me"}]},
+            ) as resp:
+                assert resp.status == 502
+    finally:
+        await session.close()
+        await proxy_runner.cleanup()
+        await bus.close_all()
+
+    record = json.loads(jsonl_path.read_text(encoding="utf-8").strip())
+    assert record["request"]["path"] == "/v1/messages"
+    assert record["request"]["body"]["messages"][0]["content"] == "preserve me"
+    assert record["response"]["status"] == 502
+    assert "upstream" in record["response"]["body"]
+    assert stats.summary()["api_calls"] == 1
+
+
 async def test_reverse_proxy_streams_and_reassembles(trace_dir: Path):
     """SSE response is forwarded chunk-by-chunk *and* reassembled into a
     snapshot recorded into the trace."""

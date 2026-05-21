@@ -242,7 +242,7 @@ Commands
   run [client]    Trace a CLI and launch it under the proxy (default)
   proxy           Run the proxy alone, accept connections from any client
   live            Open the real-time viewer against an existing trace tree
-  export FILE     Render a trace JSONL as markdown / json / html
+  export FILE     Render a trace JSONL as markdown / json / prompt-md / html
   update          Check for, and optionally install, a new release
   ca {path,…}     Manage the local TLS CA used by forward mode
 
@@ -283,6 +283,9 @@ If no subcommand is given, `run` is implied. `claude-tap` and
 # Trace your default CLI for a quick task
 claude-tap claude -- -p "What is 2+2?"
 
+# Trace once and export the captured system prompt / instructions / tools
+claude-tap run gemini --export-prompt prompt.md --no-live --no-open -- -p "hi"
+
 # Force forward mode (CA install required) for any CLI
 claude-tap claude -m forward
 
@@ -299,6 +302,10 @@ claude-tap live
 # Export a single trace to markdown / json / html
 claude-tap export ./.traces/2026-05-06/trace_120137.jsonl -o report.md
 claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format html
+
+# Export the captured system prompt / instructions / tools as Markdown
+claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format prompt-md -o prompt.md
+claude-tap export ./.traces/2026-05-06/trace_120137.jsonl -o prompt.prompt.md
 ```
 
 ---

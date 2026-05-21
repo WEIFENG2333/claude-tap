@@ -114,6 +114,21 @@ async def _handle_http(
             timeout=aiohttp.ClientTimeout(total=600, sock_read=300),
         )
     except Exception as exc:
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        record = _build_http_record(
+            request_id=request_id,
+            turn=turn,
+            duration_ms=duration_ms,
+            method=request.method,
+            path=request.path_qs,
+            req_headers=request.headers,
+            req_body=req_body,
+            status=502,
+            resp_headers={},
+            resp_body={"error": str(exc), "upstream": upstream_url},
+            upstream_base_url=ctx.target,
+        )
+        await ctx.bus.publish(record)
         log.error("[Turn %d] upstream error %s: %s", turn, upstream_url, exc)
         return web.Response(status=502, text=str(exc))
 

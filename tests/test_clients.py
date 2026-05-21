@@ -149,17 +149,17 @@ def test_yolo_args_match_each_cli_published_flag():
     # the wording" PR has to update the test too — these flags are taken
     # from each CLI's own --help output, not invented.
     expected = {
-        "claude":   ("--dangerously-skip-permissions",),
-        "codex":    ("--full-auto",),
-        "gemini":   ("--yolo",),
+        "claude": ("--dangerously-skip-permissions",),
+        "codex": ("--full-auto",),
+        "gemini": ("--yolo",),
         "opencode": ("--dangerously-skip-permissions",),
-        "kimi":     ("--yolo",),
-        "iflow":    ("--yolo",),
-        "cursor":   ("--yolo",),
-        "qoder":    ("--yolo",),
-        "hermes":   ("--yolo",),
-        "devin":    ("--permission-mode", "dangerous"),
-        "pi":       (),  # no single-flag yolo; runner prints a note instead
+        "kimi": ("--yolo",),
+        "iflow": ("--yolo",),
+        "cursor": ("--yolo",),
+        "qoder": ("--yolo",),
+        "hermes": ("--yolo",),
+        "devin": ("--permission-mode", "dangerous"),
+        "pi": (),  # no single-flag yolo; runner prints a note instead
     }
     for name, want in expected.items():
         assert clients.get(name).yolo_args == want, name
@@ -518,8 +518,10 @@ def test_is_multi_backend_false_for_single_protocol_clients():
 def test_env_redirect_reliable_matches_client_capability():
     """Single-backend clients honor env / CLI-arg redirect. Multi-backend
     clients have config-file ``baseURL`` that overrides our env override,
-    so they default to forward mode instead."""
-    for name in ("claude", "codex", "gemini", "cursor", "qoder", "devin"):
+    so they default to forward mode instead. Devin is single-backend but its
+    rustls binary does not honor our env redirect, so it also defaults to
+    forward mode."""
+    for name in ("claude", "codex", "gemini", "cursor", "qoder"):
         assert clients.get(name).env_redirect_reliable, name
-    for name in ("opencode", "pi", "kimi", "iflow", "hermes"):
+    for name in ("opencode", "pi", "kimi", "iflow", "hermes", "devin"):
         assert not clients.get(name).env_redirect_reliable, name

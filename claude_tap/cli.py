@@ -5,7 +5,7 @@ Top-level commands::
     run [client]     Trace a client and launch it (default if no subcommand)
     proxy            Run the proxy alone (for external clients)
     live             Open the live viewer against an existing trace tree
-    export FILE      Render a trace as markdown / json / html
+    export FILE      Render a trace as markdown / json / prompt-md / html
     update           Check for, and optionally install, a new release
     ca {path,regen}  Manage the local TLS CA used by forward mode
 
@@ -159,7 +159,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  claude-tap gemini                         # uses GEMINI_API_KEY env var\n"
             "  claude-tap opencode                       # multi-protocol: anthropic+openai+gemini\n"
             "  claude-tap proxy --protocol openai        # standalone proxy, OpenAI paths only\n"
+            "  claude-tap run gemini --export-prompt prompt.md -- -p hi\n"
             "  claude-tap export trace.jsonl -o out.md\n"
+            "  claude-tap export trace.jsonl --format prompt-md -o prompt.md\n"
             "  claude-tap export trace.jsonl --format html\n"
             "  claude-tap ca path                        # print CA cert path\n"
         ),
@@ -243,9 +245,15 @@ def _build_run_parser(sub: argparse._SubParsersAction) -> None:
         dest="yolo",
         action=argparse.BooleanOptionalAction,
         default=True,
+        help=("auto-approve every action by injecting the client's own yolo flag (default on; --no-yolo to disable)"),
+    )
+    p.add_argument(
+        "--export-prompt",
+        metavar="PATH",
+        default=None,
         help=(
-            "auto-approve every action by injecting the client's own yolo flag "
-            "(default on; --no-yolo to disable)"
+            "after the client exits, export the captured system prompt / instructions / tools as Markdown; "
+            "when this succeeds it is treated as a successful capture even if the client exited non-zero"
         ),
     )
     _add_proxy_options(p, default_host="127.0.0.1")
@@ -286,7 +294,7 @@ def _build_live_parser(sub: argparse._SubParsersAction) -> None:
 def _build_export_parser(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser(
         "export",
-        help="Render a trace JSONL file as markdown / json / html",
+        help="Render a trace JSONL file as markdown / json / prompt-md / html",
         description="Read a trace JSONL (or '-' for stdin) and write a rendered version.",
     )
     p.add_argument("trace", help="path to a .jsonl trace file (use '-' to read stdin)")
@@ -294,7 +302,7 @@ def _build_export_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--format",
         dest="fmt",
-        choices=("markdown", "json", "html"),
+        choices=("markdown", "json", "prompt-md", "html"),
         default=None,
         help="output format (default: inferred from -o, else markdown)",
     )
@@ -552,12 +560,21 @@ async def _run_pipeline_async(args: argparse.Namespace, *, launch_client: bool) 
 
         render_html(trace_path, html_path)
 
-        def _rel(p: Path) -> str:
-            return str(p.relative_to(output_dir))
+        prompt_export_path = getattr(args, "export_prompt", None) if launch_client else None
+        prompt_export_rc: int | None = None
+        prompt_path: Path | None = None
+        if prompt_export_path:
+            prompt_export_rc = _export_prompt_from_trace(trace_path, prompt_export_path)
+            if prompt_export_rc == 0 and prompt_export_path != "-":
+                prompt_path = Path(prompt_export_path).expanduser()
 
-        files = [_rel(trace_path), _rel(log_path)]
-        if html_path.exists():
-            files.append(_rel(html_path))
+        files = _session_manifest_files(
+            output_dir=output_dir,
+            trace_path=trace_path,
+            log_path=log_path,
+            html_path=html_path if html_path.exists() else None,
+            prompt_path=prompt_path if prompt_path is not None and prompt_path.exists() else None,
+        )
         manifest_mod.register(output_dir, ts, files)
         if args.max_traces > 0:
             removed = manifest_mod.cleanup(output_dir, args.max_traces)
@@ -576,13 +593,52 @@ async def _run_pipeline_async(args: argparse.Namespace, *, launch_client: bool) 
         sys.stdout.write(f"  trace:        {trace_path}\n")
         sys.stdout.write(f"  log:          {log_path}\n")
         sys.stdout.write(f"  view:         {html_path}\n")
+        if prompt_path is not None:
+            sys.stdout.write(f"  prompt:       {prompt_path}\n")
 
         if not args.no_open and html_path.exists() and launch_client:
             _open_browser(f"file://{html_path.absolute()}")
 
         sys.stdout.flush()
 
+        if prompt_export_rc is not None:
+            exit_code = 0 if prompt_export_rc == 0 else 1
+
     return exit_code
+
+
+def _export_prompt_from_trace(trace_path: Path, output: str) -> int:
+    from claude_tap.export import export
+
+    out_path = None if output == "-" else Path(output).expanduser()
+    if out_path is not None:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    return export(trace_path, output=out_path, fmt="prompt-md")
+
+
+def _path_relative_to(path: Path, base: Path) -> str | None:
+    try:
+        return str(path.resolve().relative_to(base.resolve()))
+    except ValueError:
+        return None
+
+
+def _session_manifest_files(
+    *,
+    output_dir: Path,
+    trace_path: Path,
+    log_path: Path,
+    html_path: Path | None,
+    prompt_path: Path | None,
+) -> list[str]:
+    files: list[str] = []
+    for path in (trace_path, log_path, html_path, prompt_path):
+        if path is None:
+            continue
+        rel = _path_relative_to(path, output_dir)
+        if rel is not None:
+            files.append(rel)
+    return files
 
 
 async def _wait_forever() -> None:

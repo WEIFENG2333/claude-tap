@@ -112,6 +112,12 @@ def test_run_no_yolo_disables(parser):
     assert args.yolo is False
 
 
+def test_run_export_prompt_path(parser):
+    args = parser.parse_args(["run", "gemini", "--export-prompt", "prompt.md"])
+    assert args.client == "gemini"
+    assert args.export_prompt == "prompt.md"
+
+
 def test_run_live_short_form(parser):
     args = parser.parse_args(["run", "-L"])
     assert args.live is True
@@ -277,7 +283,7 @@ def test_resolve_config_driven_clients_force_forward_mode(fake_home: Path):
     env vars. Reverse mode would silently capture nothing, so we default
     to forward (HTTPS_PROXY + CA) for these. Verified empirically against
     real opencode binary."""
-    for name in ("opencode", "pi", "kimi", "iflow", "hermes"):
+    for name in ("opencode", "pi", "kimi", "iflow", "hermes", "devin"):
         client = clients_mod.get(name)
         _, _, mode = resolve_target_and_mode(
             client=client,
@@ -291,7 +297,7 @@ def test_resolve_config_driven_clients_force_forward_mode(fake_home: Path):
 
 
 def test_resolve_single_backend_clients_use_reverse(fake_home: Path):
-    """claude / codex / gemini / cursor / qoder / devin all honor env or
+    """claude / codex / gemini / cursor / qoder all honor env or
     CLI-arg overrides reliably — reverse mode captures their traffic."""
     for name in ("claude", "codex", "gemini", "cursor", "qoder"):
         client = clients_mod.get(name)
