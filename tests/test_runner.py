@@ -124,4 +124,7 @@ def test_export_prompt_from_trace_creates_parent_directory(tmp_path):
     rc = _export_prompt_from_trace(trace, str(out))
 
     assert rc == 0
-    assert "# Prompt Snapshot" in out.read_text(encoding="utf-8")
+    text = out.read_text(encoding="utf-8")
+    assert "# Prompt Snapshot" not in text
+    assert "# System Prompt" in text
+    assert "system text" in text

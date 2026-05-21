@@ -95,23 +95,15 @@ def infer_provider(record: dict[str, Any]) -> str:
 
 
 def render_prompt_markdown(snapshot: PromptSnapshot) -> str:
-    """Render a normalized snapshot as a standalone Markdown document."""
+    """Render a normalized prompt snapshot as comparison-oriented Markdown.
 
-    lines: list[str] = ["# Prompt Snapshot", ""]
-    meta = [
-        ("Provider", snapshot.provider),
-        ("Model", snapshot.model),
-        ("Path", snapshot.path),
-        ("Upstream", snapshot.upstream_base_url),
-        ("Turn", "" if snapshot.turn is None else str(snapshot.turn)),
-        ("Request ID", snapshot.request_id),
-        ("Captured", snapshot.captured_at),
-        ("Tools", str(len(snapshot.tools))),
-    ]
-    for key, value in meta:
-        if value:
-            lines.append(f"- **{key}**: {value}")
-    lines.append("")
+    Volatile capture metadata such as request IDs, timestamps, upstream URLs,
+    and turn numbers belongs in trace/meta files. The prompt Markdown is meant
+    to diff cleanly across CLI versions, so it contains only prompt-bearing
+    content and tool definitions.
+    """
+
+    lines: list[str] = []
 
     _append_section(lines, "System Prompt", snapshot.system_prompt)
     _append_section(lines, "Developer Prompt", snapshot.developer_prompt)
@@ -126,7 +118,7 @@ def render_prompt_markdown(snapshot: PromptSnapshot) -> str:
         lines.append(f"## {tool.name or 'unnamed_tool'}")
         lines.append("")
         if tool.description:
-            lines.append(tool.description)
+            lines.append(_indent_markdown_headers(_indent_markdown_headers(tool.description)))
             lines.append("")
         schema = tool.schema if tool.schema else tool.raw
         lines.append("```json")
@@ -135,6 +127,10 @@ def render_prompt_markdown(snapshot: PromptSnapshot) -> str:
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _indent_markdown_headers(text: str) -> str:
+    return "\n".join(f"#{line}" if line.startswith("#") else line for line in text.splitlines())
 
 
 def _score_record(record: dict[str, Any], provider: str) -> int:
@@ -451,5 +447,5 @@ def _append_section(lines: list[str], title: str, text: str) -> None:
         return
     lines.append(f"# {title}")
     lines.append("")
-    lines.append(text)
+    lines.append(_indent_markdown_headers(text))
     lines.append("")

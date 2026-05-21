@@ -188,16 +188,22 @@ def test_provider_inference_can_fall_back_to_body_shape():
     assert infer_provider(_record("/custom", {"systemInstruction": {}, "contents": []})) == "gemini"
 
 
-def test_prompt_markdown_is_standalone_and_includes_raw_schema():
+def test_prompt_markdown_is_comparison_oriented_and_includes_raw_schema():
     snapshot = snapshot_from_records(
         [
             _record(
                 "/v1/messages",
                 {
                     "model": "claude",
-                    "system": "sys",
+                    "system": "# sys\ncontent",
                     "messages": [{"role": "user", "content": "hi"}],
-                    "tools": [{"name": "Read", "description": "Read files", "input_schema": {"type": "object"}}],
+                    "tools": [
+                        {
+                            "name": "Read",
+                            "description": "# Read files",
+                            "input_schema": {"type": "object"},
+                        }
+                    ],
                 },
             )
         ]
@@ -205,10 +211,13 @@ def test_prompt_markdown_is_standalone_and_includes_raw_schema():
 
     out = render_prompt_markdown(snapshot)
 
-    assert "# Prompt Snapshot" in out
+    assert "# Prompt Snapshot" not in out
+    assert "Request ID" not in out
+    assert "Captured" not in out
     assert "# System Prompt" in out
-    assert "sys" in out
+    assert "## sys" in out
     assert "## Read" in out
+    assert "### Read files" in out
     assert '"type": "object"' in out
 
 
@@ -236,5 +245,6 @@ def test_prompt_md_export_format(tmp_path: Path):
 
     assert rc == 0
     text = out.read_text(encoding="utf-8")
-    assert "Provider**: anthropic" in text
+    assert "# Prompt Snapshot" not in text
+    assert "# System Prompt" in text
     assert "system text" in text
