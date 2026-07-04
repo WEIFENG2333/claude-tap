@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 
 from claude_tap import protocols
-from claude_tap.protocols import ANTHROPIC, CODEX_APP, GEMINI, OPENAI
+from claude_tap.protocols import ANTHROPIC, ANTIGRAVITY, CODEX_APP, GEMINI, OPENAI
 
 
 def test_registry_has_known_protocols():
     names = protocols.names()
-    assert names == ["anthropic", "codexapp", "gemini", "openai", "passthrough"]
+    assert names == ["anthropic", "antigravity", "codexapp", "gemini", "openai", "passthrough"]
 
 
 def test_registry_get_unknown_raises():
@@ -46,6 +46,15 @@ def test_codexapp_relays_all_but_captures_only_response_posts():
     assert not CODEX_APP.captures("POST", "/backend-api/codex/analytics-events/events")
 
 
+def test_antigravity_relays_internal_paths_but_captures_only_generation():
+    assert ANTIGRAVITY.matches("/v1internal:loadCodeAssist")
+    assert ANTIGRAVITY.matches("/v1internal:streamGenerateContent?alt=sse")
+    assert not ANTIGRAVITY.matches("/v1/internal")
+    assert ANTIGRAVITY.captures("POST", "/v1internal:streamGenerateContent?alt=sse")
+    assert not ANTIGRAVITY.captures("GET", "/v1internal:streamGenerateContent?alt=sse")
+    assert not ANTIGRAVITY.captures("POST", "/v1internal:fetchAvailableModels")
+
+
 def test_gemini_matches_versioned_paths():
     assert GEMINI.matches("/v1beta/models")
     assert GEMINI.matches("/v1beta/models/gemini-3:streamGenerateContent?alt=sse")
@@ -77,6 +86,10 @@ def test_gemini_streaming_via_url():
     assert GEMINI.is_streaming("/foo:streamGenerateContent", {})
     assert GEMINI.is_streaming("/foo?alt=sse", {})
     assert not GEMINI.is_streaming("/v1beta/models/x:generateContent", {})
+
+
+def test_antigravity_streaming_uses_gemini_url_signal():
+    assert ANTIGRAVITY.is_streaming("/v1internal:streamGenerateContent?alt=sse", {})
 
 
 def test_openai_streaming_via_body():

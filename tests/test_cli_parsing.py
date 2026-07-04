@@ -293,13 +293,13 @@ def test_resolve_codex_reads_user_provider_from_toml(fake_home: Path):
 def test_resolve_config_driven_clients_force_forward_mode(fake_home: Path):
     """Config-driven clients and rustls clients default to forward mode.
 
-    opencode/pi/kimi/iflow/hermes honor a config-file ``baseURL`` over env
-    vars. Devin is single-backend, but its rustls binary does not honor our
-    env redirect. Codex.app launches its API sidecar from Electron, so
-    reverse-mode CLI config overrides do not reach the request process.
-    Reverse mode would silently capture nothing for these clients.
+    opencode/pi/omp/kimi/kimi-code/mimo/iflow/hermes honor a config-file
+    ``baseURL`` over env vars. Devin is single-backend, but its rustls binary
+    does not honor our env redirect. Codex.app launches its API sidecar from
+    Electron, so reverse-mode CLI config overrides do not reach the request
+    process. Reverse mode would silently capture nothing for these clients.
     """
-    for name in ("opencode", "pi", "kimi", "iflow", "hermes", "devin", "codexapp"):
+    for name in ("opencode", "pi", "omp", "kimi", "kimi-code", "mimo", "iflow", "hermes", "devin", "codexapp"):
         client = clients_mod.get(name)
         _, _, mode = resolve_target_and_mode(
             client=client,
@@ -326,9 +326,9 @@ def test_resolve_openclaw_uses_reverse_because_config_is_patched(fake_home: Path
 
 
 def test_resolve_single_backend_clients_use_reverse(fake_home: Path):
-    """claude / codex / gemini / cursor / qoder all honor env or
+    """agy / claude / codex / gemini / cursor / qoder all honor env or
     CLI-arg overrides reliably — reverse mode captures their traffic."""
-    for name in ("claude", "codex", "gemini", "cursor", "qoder"):
+    for name in ("agy", "claude", "codex", "gemini", "cursor", "qoder"):
         client = clients_mod.get(name)
         _, _, mode = resolve_target_and_mode(
             client=client,

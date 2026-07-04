@@ -84,6 +84,8 @@ def infer_provider(record: dict[str, Any]) -> str:
         return "openai"
     if "/models/" in path or path.startswith(("/v1beta/models", "/v1/models")):
         return "gemini"
+    if path.startswith("/v1internal") and _looks_like_gemini_body(body):
+        return "gemini"
 
     if "system" in body and "messages" in body:
         return "anthropic"
@@ -184,7 +186,12 @@ def _gemini_snapshot(record: dict[str, Any]) -> PromptSnapshot:
     body = _request_body(record)
     system_prompt, developer_prompt, user_message = _prompt_text_for_provider("gemini", body)
     tools = tuple(_gemini_tools(body.get("tools")))
-    model = str(body.get("model") or _gemini_model_from_path(str((record.get("request") or {}).get("path") or "")))
+    outer_body = _outer_request_body(record)
+    model = str(
+        body.get("model")
+        or outer_body.get("model")
+        or _gemini_model_from_path(str((record.get("request") or {}).get("path") or ""))
+    )
     return _base_snapshot(
         record,
         provider="gemini",
@@ -224,9 +231,41 @@ def _base_snapshot(
 
 
 def _request_body(record: dict[str, Any]) -> dict[str, Any]:
+    return _prompt_body(_outer_request_body(record))
+
+
+def _outer_request_body(record: dict[str, Any]) -> dict[str, Any]:
     req = record.get("request") if isinstance(record.get("request"), dict) else {}
     body = req.get("body")
     return body if isinstance(body, dict) else {}
+
+
+def _prompt_body(body: dict[str, Any]) -> dict[str, Any]:
+    nested = body.get("request")
+    if not isinstance(nested, dict):
+        return body
+    nested_score = _prompt_body_score(nested)
+    if nested_score and nested_score >= _prompt_body_score(body):
+        return nested
+    return body
+
+
+def _prompt_body_score(body: dict[str, Any]) -> int:
+    score = 0
+    for key in ("system", "system_instruction", "systemInstruction", "instructions"):
+        if key in body and body.get(key) is not None:
+            score += 4
+    for key in ("messages", "input", "contents"):
+        if key in body and body.get(key) is not None:
+            score += 3
+    for key in ("tools", "functions"):
+        if key in body and body.get(key) is not None:
+            score += 2
+    return score
+
+
+def _looks_like_gemini_body(body: dict[str, Any]) -> bool:
+    return any(key in body for key in ("contents", "system_instruction", "systemInstruction"))
 
 
 def _tools_for_provider(provider: str, body: dict[str, Any]) -> list[PromptTool]:

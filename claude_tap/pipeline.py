@@ -126,7 +126,7 @@ def capture_only_response(protocol: Protocol, path: str, req_body: object) -> di
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 0, "output_tokens": 0},
         }
-    if protocol.name == "gemini":
+    if protocol.name in ("gemini", "antigravity"):
         return {
             "candidates": [
                 {

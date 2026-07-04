@@ -32,6 +32,12 @@ def fake_home(tmp_path: Path, monkeypatch) -> Path:
         "IFLOW_BASE_URL",
         "PI_CODING_AGENT_DIR",
         "OPENCODE_CONFIG",
+        "KIMI_CODE_HOME",
+        "KIMI_CODE_BASE_URL",
+        "KIMI_BASE_URL",
+        "MOONSHOT_BASE_URL",
+        "MIMOCODE_CONFIG",
+        "MIMOCODE_MIMO_ONLY",
     ):
         monkeypatch.delenv(v, raising=False)
     return tmp_path
@@ -42,6 +48,7 @@ def fake_home(tmp_path: Path, monkeypatch) -> Path:
 
 def test_registry_lists_known_clients():
     assert sorted(clients.names()) == [
+        "agy",
         "claude",
         "codex",
         "codexapp",
@@ -51,6 +58,9 @@ def test_registry_lists_known_clients():
         "hermes",
         "iflow",
         "kimi",
+        "kimi-code",
+        "mimo",
+        "omp",
         "openclaw",
         "opencode",
         "pi",
@@ -98,6 +108,17 @@ def test_claude_env_redirects_anthropic_base_url():
 def test_gemini_env_uses_google_var():
     env = clients.get("gemini").env_overrides("http://127.0.0.1:8080")
     assert env == {"GOOGLE_GEMINI_BASE_URL": "http://127.0.0.1:8080"}
+
+
+def test_antigravity_env_uses_cloud_code_url():
+    env = clients.get("agy").env_overrides("http://127.0.0.1:8080")
+    assert env == {"CLOUD_CODE_URL": "http://127.0.0.1:8080"}
+
+
+def test_kimi_code_env_redirects_coding_base_url():
+    env = clients.get("kimi-code").env_overrides("http://127.0.0.1:8080")
+    assert env["KIMI_CODE_BASE_URL"] == "http://127.0.0.1:8080/v1"
+    assert env["KIMI_BASE_URL"] == "http://127.0.0.1:8080/v1"
 
 
 def test_codex_has_no_env_overrides_only_cli_args():
@@ -157,6 +178,14 @@ def test_opencode_env_redirects_all_three_backends():
     assert env["GOOGLE_GEMINI_BASE_URL"] == "http://127.0.0.1:8080"
 
 
+def test_mimo_env_redirects_common_backends():
+    env = clients.get("mimo").env_overrides("http://127.0.0.1:8080")
+    assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8080"
+    assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8080/v1"
+    assert env["GOOGLE_GEMINI_BASE_URL"] == "http://127.0.0.1:8080"
+    assert env["MIMOCODE_MIMO_ONLY"] == "false"
+
+
 def test_openclaw_env_redirects_common_backends():
     env = clients.get("openclaw").env_overrides("http://127.0.0.1:8080")
     assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8080/v1"
@@ -199,6 +228,7 @@ def test_openclaw_env_writes_temp_config_for_active_provider(fake_home: Path):
 
 
 def test_single_protocol_clients():
+    assert [p.name for p in clients.get("agy").protocols] == ["antigravity"]
     assert [p.name for p in clients.get("claude").protocols] == ["anthropic"]
     assert [p.name for p in clients.get("codex").protocols] == ["openai"]
     assert [p.name for p in clients.get("codexapp").protocols] == ["codexapp"]
@@ -206,7 +236,7 @@ def test_single_protocol_clients():
 
 
 def test_multi_backend_clients_advertise_three_protocols():
-    for name in ("opencode", "pi", "kimi", "iflow", "hermes", "openclaw"):
+    for name in ("opencode", "pi", "omp", "kimi", "kimi-code", "mimo", "iflow", "hermes", "openclaw"):
         names = sorted(p.name for p in clients.get(name).protocols)
         assert {"anthropic", "openai", "gemini"}.issubset(set(names)), name
 
@@ -216,12 +246,15 @@ def test_yolo_args_match_each_cli_published_flag():
     # the wording" PR has to update the test too — these flags are taken
     # from each CLI's own --help output, not invented.
     expected = {
+        "agy": (),
         "claude": ("--dangerously-skip-permissions",),
         "codex": ("--dangerously-bypass-approvals-and-sandbox",),
         "codexapp": (),
         "gemini": ("--yolo",),
         "opencode": ("--dangerously-skip-permissions",),
         "kimi": ("--yolo",),
+        "kimi-code": ("--yolo",),
+        "mimo": ("--never-ask",),
         "iflow": ("--yolo",),
         "cursor": ("--yolo",),
         "qoder": ("--yolo",),
@@ -229,6 +262,7 @@ def test_yolo_args_match_each_cli_published_flag():
         "openclaw": (),  # no global auto-approve flag on `openclaw agent`
         "devin": ("--permission-mode", "dangerous"),
         "pi": (),  # no single-flag yolo; runner prints a note instead
+        "omp": ("--approval-mode", "yolo"),
     }
     for name, want in expected.items():
         assert clients.get(name).yolo_args == want, name
@@ -322,6 +356,12 @@ def test_gemini_configured_returns_none_when_no_env():
     assert clients.get("gemini").read_configured_upstream({}) is None
 
 
+def test_antigravity_configured_reads_cloud_code_url():
+    assert clients.get("agy").read_configured_upstream({"CLOUD_CODE_URL": "https://cloudcode.example.com/"}) == (
+        "https://cloudcode.example.com"
+    )
+
+
 def test_kimi_configured_resolves_default_model_to_provider_base_url(fake_home: Path):
     cfg = fake_home / ".kimi" / "config.toml"
     cfg.parent.mkdir(parents=True)
@@ -344,6 +384,33 @@ def test_kimi_configured_resolves_default_model_to_provider_base_url(fake_home: 
 def test_kimi_configured_handles_missing_config(fake_home: Path):
     """Brand-new install (kimi never run) has no config.toml yet."""
     assert clients.get("kimi").read_configured_upstream({}) is None
+
+
+def test_kimi_code_configured_resolves_default_model_to_provider_base_url(fake_home: Path):
+    cfg = fake_home / ".kimi-code" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        'default_model = "kimi-code/kimi-for-coding"\n'
+        "\n"
+        "[providers.kimi-code]\n"
+        'base_url = "https://api.kimi.com/coding/v1"\n'
+        'api_key = "fake"\n'
+        "\n"
+        '[models."kimi-code/kimi-for-coding"]\n'
+        'provider = "kimi-code"\n'
+        'model = "kimi-for-coding"\n',
+        encoding="utf-8",
+    )
+    assert clients.get("kimi-code").read_configured_upstream({}) == "https://api.kimi.com/coding/v1"
+
+
+def test_kimi_code_configured_env_wins_over_file(fake_home: Path):
+    cfg = fake_home / ".kimi-code" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text('default_model = "x"\n', encoding="utf-8")
+    assert clients.get("kimi-code").read_configured_upstream({"KIMI_CODE_BASE_URL": "https://relay/v1"}) == (
+        "https://relay/v1"
+    )
 
 
 def test_iflow_configured_settings_wins_over_env(fake_home: Path):
@@ -396,6 +463,36 @@ def test_pi_configured_handles_no_config(fake_home: Path):
     assert clients.get("pi").read_configured_upstream({}) is None
 
 
+def test_omp_configured_picks_default_provider_base_url(fake_home: Path):
+    base = fake_home / ".omp" / "agent"
+    base.mkdir(parents=True)
+    (base / "models.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {"baseUrl": "https://api.openai.com/v1"},
+                    "myrelay": {"baseUrl": "https://relay.example.com/v1"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (base / "settings.json").write_text(json.dumps({"defaultProvider": "myrelay"}), encoding="utf-8")
+    assert clients.get("omp").read_configured_upstream({}) == "https://relay.example.com/v1"
+
+
+def test_omp_configured_honors_pi_agent_dir_env(fake_home: Path):
+    base = fake_home / "custom-omp"
+    base.mkdir()
+    (base / "models.json").write_text(
+        json.dumps({"providers": {"openai": {"baseUrl": "https://api.openai.com/v1"}}}),
+        encoding="utf-8",
+    )
+    assert clients.get("omp").read_configured_upstream({"PI_CODING_AGENT_DIR": str(base)}) == (
+        "https://api.openai.com/v1"
+    )
+
+
 def test_opencode_configured_reads_active_provider_baseurl(fake_home: Path):
     cfg = fake_home / ".config" / "opencode" / "opencode.json"
     cfg.parent.mkdir(parents=True)
@@ -437,6 +534,36 @@ def test_opencode_configured_returns_none_without_explicit_model(fake_home: Path
     cfg.parent.mkdir(parents=True)
     cfg.write_text(json.dumps({"provider": {"openai": {}}}), encoding="utf-8")
     assert clients.get("opencode").read_configured_upstream({}) is None
+
+
+def test_mimo_configured_reads_active_provider_baseurl(fake_home: Path):
+    cfg = fake_home / ".config" / "mimocode" / "mimocode.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        json.dumps(
+            {
+                "model": "myrelay/gpt-4.1",
+                "provider": {
+                    "myrelay": {"options": {"baseURL": "https://relay.example.com/v1"}},
+                    "openai": {"options": {"baseURL": "https://api.openai.com/v1"}},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert clients.get("mimo").read_configured_upstream({}) == "https://relay.example.com/v1"
+
+
+def test_mimo_configured_resolves_env_interpolation(fake_home: Path):
+    cfg = fake_home / ".config" / "mimocode" / "mimocode.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        json.dumps({"model": "myrelay/x", "provider": {"myrelay": {"options": {"baseURL": "{env:RELAY_URL}"}}}}),
+        encoding="utf-8",
+    )
+    assert clients.get("mimo").read_configured_upstream({"RELAY_URL": "https://from-env.example.com"}) == (
+        "https://from-env.example.com"
+    )
 
 
 def test_hermes_configured_provider_env_wins_for_openrouter(fake_home: Path):
@@ -629,11 +756,15 @@ def test_claude_purges_nesting_env():
 
 def test_other_clients_have_no_purge_list():
     for name in (
+        "agy",
         "codex",
         "gemini",
         "opencode",
         "pi",
+        "omp",
         "kimi",
+        "kimi-code",
+        "mimo",
         "iflow",
         "cursor",
         "qoder",
@@ -650,7 +781,7 @@ def test_other_clients_have_no_purge_list():
 def test_proprietary_client_auth_detect_messages_are_actionable():
     """No creds → tell the user how to fix it (login command or env var)."""
     actionable_keywords = ("login", "configure", "_TOKEN", "_API_KEY", "_ACCESS_TOKEN")
-    for name in ("cursor", "qoder", "devin", "openclaw"):
+    for name in ("cursor", "qoder", "devin", "openclaw", "agy"):
         info = clients.get(name).detect_auth()
         assert any(k.lower() in info.detail.lower() for k in actionable_keywords), (
             f"{name}: detail not actionable: {info.detail!r}"
@@ -661,12 +792,12 @@ def test_proprietary_client_auth_detect_messages_are_actionable():
 
 
 def test_is_multi_backend_for_multi_protocol_clients():
-    for name in ("opencode", "pi", "kimi", "iflow", "hermes", "openclaw"):
+    for name in ("opencode", "pi", "omp", "kimi", "kimi-code", "mimo", "iflow", "hermes", "openclaw"):
         assert clients.is_multi_backend(clients.get(name)), name
 
 
 def test_is_multi_backend_false_for_single_protocol_clients():
-    for name in ("claude", "codex", "gemini", "cursor", "qoder", "devin"):
+    for name in ("agy", "claude", "codex", "gemini", "cursor", "qoder", "devin"):
         assert not clients.is_multi_backend(clients.get(name)), name
 
 
@@ -676,7 +807,7 @@ def test_env_redirect_reliable_matches_client_capability():
     so they default to forward mode instead. Devin is single-backend but its
     rustls binary does not honor our env redirect, so it also defaults to
     forward mode."""
-    for name in ("claude", "codex", "gemini", "cursor", "qoder", "openclaw"):
+    for name in ("agy", "claude", "codex", "gemini", "cursor", "qoder", "openclaw"):
         assert clients.get(name).env_redirect_reliable, name
-    for name in ("opencode", "pi", "kimi", "iflow", "hermes", "devin"):
+    for name in ("opencode", "pi", "omp", "kimi", "kimi-code", "mimo", "iflow", "hermes", "devin"):
         assert not clients.get(name).env_redirect_reliable, name

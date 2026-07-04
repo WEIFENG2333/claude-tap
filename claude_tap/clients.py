@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal
 
-from claude_tap.protocols import ANTHROPIC, CODEX_APP, GEMINI, OPENAI, PASSTHROUGH, Protocol
+from claude_tap.protocols import ANTHROPIC, ANTIGRAVITY, CODEX_APP, GEMINI, OPENAI, PASSTHROUGH, Protocol
 
 LAUNCH_CLEANUP_PATH_ENV = "__CLAUDE_TAP_CLEANUP_PATH__"
 
@@ -206,6 +206,17 @@ def _read_json5ish(path: Path) -> dict | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _configured_url_value(value: object, env: Mapping[str, str]) -> str | None:
+    if isinstance(value, str) and value.startswith("{env:") and value.endswith("}"):
+        return _strip_url(env.get(value[5:-1]))
+    if isinstance(value, Mapping):
+        for key in ("env", "$env"):
+            var = value.get(key)
+            if isinstance(var, str):
+                return _strip_url(env.get(var))
+    return _strip_url(value)
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +409,37 @@ def _gemini_auth() -> AuthInfo:
 
 
 # ---------------------------------------------------------------------------
+# Antigravity CLI — Google Code Assist internal API. The model request uses
+# a Gemini-shaped body nested under ``request``.
+# ---------------------------------------------------------------------------
+
+
+def _antigravity_env(proxy_url: str) -> dict[str, str]:
+    return {"CLOUD_CODE_URL": proxy_url}
+
+
+def _antigravity_configured(env: Mapping[str, str]) -> str | None:
+    return _strip_url(env.get("CLOUD_CODE_URL"))
+
+
+def _antigravity_auth() -> AuthInfo:
+    token = Path.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+    if token.is_file():
+        return AuthInfo(
+            logged_in=True,
+            mode="oauth",
+            detail="Antigravity OAuth token",
+            suggested_target=ANTIGRAVITY.default_target,
+        )
+    return AuthInfo(
+        logged_in=False,
+        mode="unknown",
+        detail="not logged in (run `agy` and complete login)",
+        suggested_target=ANTIGRAVITY.default_target,
+    )
+
+
+# ---------------------------------------------------------------------------
 # OpenCode — JSON config with provider blocks; multi-backend.
 # ---------------------------------------------------------------------------
 
@@ -476,6 +518,90 @@ def _opencode_auth() -> AuthInfo:
 
 
 # ---------------------------------------------------------------------------
+# MiMo Code — JSON config with opencode-like provider blocks; multi-backend.
+# ---------------------------------------------------------------------------
+
+
+def _mimo_env(proxy_url: str) -> dict[str, str]:
+    return {
+        "ANTHROPIC_BASE_URL": proxy_url,
+        "OPENAI_BASE_URL": f"{proxy_url}/v1",
+        "GOOGLE_GEMINI_BASE_URL": proxy_url,
+        "OPENROUTER_BASE_URL": f"{proxy_url}/v1",
+        "MIMOCODE_MIMO_ONLY": "false",
+    }
+
+
+def _mimo_config_path(env: Mapping[str, str]) -> Path:
+    explicit = env.get("MIMOCODE_CONFIG")
+    if explicit:
+        return Path(explicit).expanduser()
+    return Path.home() / ".config" / "mimocode" / "mimocode.json"
+
+
+def _mimo_configured(env: Mapping[str, str]) -> str | None:
+    cfg = _read_json(_mimo_config_path(env))
+    if not cfg:
+        return None
+
+    model = cfg.get("model")
+    provider_id = model.split("/", 1)[0] if isinstance(model, str) and "/" in model else None
+    providers = cfg.get("provider")
+    if not isinstance(providers, dict):
+        return None
+
+    if not provider_id:
+        provider_id = next((key for key in providers if isinstance(key, str)), None)
+    if not provider_id:
+        return None
+
+    block = providers.get(provider_id)
+    if not isinstance(block, dict):
+        return None
+    options = block.get("options")
+    if isinstance(options, dict):
+        for key in ("baseURL", "baseUrl", "base_url"):
+            url = _configured_url_value(options.get(key), env)
+            if url:
+                return url
+    for key in ("baseURL", "baseUrl", "base_url"):
+        url = _configured_url_value(block.get(key), env)
+        if url:
+            return url
+    return None
+
+
+def _mimo_auth() -> AuthInfo:
+    for var, target in (
+        ("ANTHROPIC_API_KEY", ANTHROPIC.default_target),
+        ("OPENAI_API_KEY", OPENAI.default_target),
+        ("GEMINI_API_KEY", GEMINI.default_target),
+        ("GOOGLE_API_KEY", GEMINI.default_target),
+        ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1"),
+    ):
+        if os.environ.get(var):
+            return AuthInfo(
+                logged_in=True,
+                mode="apikey",
+                detail=f"{var} env var",
+                suggested_target=target,
+            )
+    if _mimo_config_path(os.environ).is_file():
+        return AuthInfo(
+            logged_in=True,
+            mode="unknown",
+            detail="MiMo Code config found",
+            suggested_target=OPENAI.default_target,
+        )
+    return AuthInfo(
+        logged_in=False,
+        mode="unknown",
+        detail="not configured (run `mimo` once, or export a provider API key)",
+        suggested_target=OPENAI.default_target,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pi (badlogic/pi-coding-agent) — JSON config under ~/.pi/agent.
 # ---------------------------------------------------------------------------
 
@@ -530,6 +656,67 @@ def _pi_auth() -> AuthInfo:
 
 
 # ---------------------------------------------------------------------------
+# Oh My Pi — Bun-based successor package with Pi-style models.json.
+# ---------------------------------------------------------------------------
+
+
+def _omp_agent_dir(env: Mapping[str, str]) -> Path:
+    custom = env.get("PI_CODING_AGENT_DIR")
+    if custom:
+        return Path(custom).expanduser()
+    return Path.home() / ".omp" / "agent"
+
+
+def _omp_configured(env: Mapping[str, str]) -> str | None:
+    base = _omp_agent_dir(env)
+    models = _read_json(base / "models.json")
+    if not models:
+        return None
+    providers = models.get("providers")
+    if not isinstance(providers, dict) or not providers:
+        return None
+
+    settings = _read_json(base / "settings.json") or {}
+    active = settings.get("defaultProvider") or settings.get("provider")
+    if not isinstance(active, str) or active not in providers:
+        active = next(iter(providers))
+
+    block = providers[active]
+    if not isinstance(block, dict):
+        return None
+    return _strip_url(block.get("baseUrl"))
+
+
+def _omp_auth() -> AuthInfo:
+    for var, target in (
+        ("ANTHROPIC_API_KEY", ANTHROPIC.default_target),
+        ("OPENAI_API_KEY", OPENAI.default_target),
+        ("GEMINI_API_KEY", GEMINI.default_target),
+        ("GOOGLE_API_KEY", GEMINI.default_target),
+    ):
+        if os.environ.get(var):
+            return AuthInfo(
+                logged_in=True,
+                mode="apikey",
+                detail=f"{var} env var",
+                suggested_target=target,
+            )
+    if (_omp_agent_dir(os.environ) / "models.json").is_file():
+        return AuthInfo(
+            logged_in=True,
+            mode="unknown",
+            detail="Oh My Pi models.json found",
+            suggested_target=OPENAI.default_target,
+        )
+    return AuthInfo(
+        logged_in=False,
+        mode="unknown",
+        detail="not configured (run `omp` once, or export a provider API key)",
+        suggested_target=OPENAI.default_target,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Kimi CLI — TOML config; ``default_model`` → ``models.<m>.provider`` →
 # ``providers.<p>.base_url``.
 # ---------------------------------------------------------------------------
@@ -571,6 +758,75 @@ def _kimi_auth() -> AuthInfo:
         logged_in=False,
         mode="unknown",
         detail="not logged in (export MOONSHOT_API_KEY or run `kimi login`)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Kimi Code — npm CLI; TOML config under ~/.kimi-code.
+# ---------------------------------------------------------------------------
+
+
+def _kimi_code_env(proxy_url: str) -> dict[str, str]:
+    return {
+        "KIMI_CODE_BASE_URL": f"{proxy_url}/v1",
+        "KIMI_BASE_URL": f"{proxy_url}/v1",
+    }
+
+
+def _kimi_code_home(env: Mapping[str, str]) -> Path:
+    custom = env.get("KIMI_CODE_HOME")
+    if custom:
+        return Path(custom).expanduser()
+    return Path.home() / ".kimi-code"
+
+
+def _kimi_code_configured(env: Mapping[str, str]) -> str | None:
+    for key in ("KIMI_CODE_BASE_URL", "KIMI_BASE_URL", "MOONSHOT_BASE_URL"):
+        url = _strip_url(env.get(key))
+        if url:
+            return url
+
+    cfg = _read_toml(_kimi_code_home(env) / "config.toml")
+    if not cfg:
+        return None
+    default_model = cfg.get("default_model")
+    if not isinstance(default_model, str):
+        return None
+    models = cfg.get("models") if isinstance(cfg.get("models"), dict) else {}
+    providers = cfg.get("providers") if isinstance(cfg.get("providers"), dict) else {}
+    model_block = models.get(default_model) if isinstance(models, dict) else None
+    if not isinstance(model_block, dict):
+        return None
+    provider_id = model_block.get("provider")
+    if not isinstance(provider_id, str):
+        return None
+    p_block = providers.get(provider_id) if isinstance(providers, dict) else None
+    if not isinstance(p_block, dict):
+        return None
+    return _strip_url(p_block.get("base_url"))
+
+
+def _kimi_code_auth() -> AuthInfo:
+    for var in ("MOONSHOT_API_KEY", "KIMI_API_KEY", "OPENAI_API_KEY"):
+        if os.environ.get(var):
+            return AuthInfo(
+                logged_in=True,
+                mode="apikey",
+                detail=f"{var} env var",
+                suggested_target="https://api.kimi.com/coding/v1",
+            )
+    if (_kimi_code_home(os.environ) / "config.toml").is_file():
+        return AuthInfo(
+            logged_in=True,
+            mode="unknown",
+            detail="Kimi Code config.toml found",
+            suggested_target="https://api.kimi.com/coding/v1",
+        )
+    return AuthInfo(
+        logged_in=False,
+        mode="unknown",
+        detail="not configured (run `kimi` once, or export MOONSHOT_API_KEY)",
+        suggested_target="https://api.kimi.com/coding/v1",
     )
 
 
@@ -1024,8 +1280,21 @@ GEMINI_CLI = Client(
 )
 
 
+ANTIGRAVITY_CLI = Client(
+    name="agy",
+    cmd="agy",
+    label="Antigravity CLI",
+    install_url="https://antigravity.google/product/antigravity-cli",
+    protocols=(ANTIGRAVITY,),
+    env_overrides=_antigravity_env,
+    read_configured_upstream=_antigravity_configured,
+    detect_auth=_antigravity_auth,
+    warn_on_missing_yolo=False,
+)
+
+
 # ---------------------------------------------------------------------------
-# Multi-backend clients (opencode / Pi / Kimi / iFlow / Hermes / OpenClaw).
+# Multi-backend clients.
 #
 # Most of these read their upstream ``baseURL`` from their own config file at
 # runtime, in a way that overrides any env var we set. Reverse mode would
@@ -1070,15 +1339,42 @@ PI = Client(
 )
 
 
+OMP = Client(
+    name="omp",
+    cmd="omp",
+    label="Oh My Pi",
+    install_url="https://github.com/can1357/oh-my-pi",
+    protocols=(ANTHROPIC, OPENAI, GEMINI, PASSTHROUGH),
+    read_configured_upstream=_omp_configured,
+    env_redirect_reliable=False,
+    detect_auth=_omp_auth,
+    yolo_args=("--approval-mode", "yolo"),
+)
+
+
 KIMI = Client(
     name="kimi",
     cmd="kimi",
-    label="Kimi Code CLI",
+    label="Kimi CLI",
     install_url="https://github.com/MoonshotAI/kimi-cli",
     protocols=(ANTHROPIC, OPENAI, GEMINI, PASSTHROUGH),
     read_configured_upstream=_kimi_configured,
     env_redirect_reliable=False,
     detect_auth=_kimi_auth,
+    yolo_args=("--yolo",),
+)
+
+
+KIMI_CODE = Client(
+    name="kimi-code",
+    cmd="kimi",
+    label="Kimi Code",
+    install_url="https://github.com/MoonshotAI/kimi-code",
+    protocols=(ANTHROPIC, OPENAI, GEMINI, PASSTHROUGH),
+    env_overrides=_kimi_code_env,
+    read_configured_upstream=_kimi_code_configured,
+    env_redirect_reliable=False,
+    detect_auth=_kimi_code_auth,
     yolo_args=("--yolo",),
 )
 
@@ -1152,6 +1448,21 @@ HERMES = Client(
     yolo_args=("--yolo",),
 )
 
+
+MIMO = Client(
+    name="mimo",
+    cmd="mimo",
+    label="MiMo Code",
+    install_url="https://mimo.xiaomi.com/en/mimocode",
+    protocols=(ANTHROPIC, OPENAI, GEMINI, PASSTHROUGH),
+    env_overrides=_mimo_env,
+    read_configured_upstream=_mimo_configured,
+    env_redirect_reliable=False,
+    detect_auth=_mimo_auth,
+    yolo_args=("--never-ask",),
+)
+
+
 OPENCLAW = Client(
     name="openclaw",
     cmd="openclaw",
@@ -1169,17 +1480,21 @@ _REGISTRY: dict[str, Client] = {
     c.name: c
     for c in (
         CLAUDE,
+        ANTIGRAVITY_CLI,
         CODEX,
         CODEX_APP_CLIENT,
         GEMINI_CLI,
         OPENCODE,
         PI,
+        OMP,
         KIMI,
+        KIMI_CODE,
         IFLOW,
         CURSOR,
         QODER,
         DEVIN,
         HERMES,
+        MIMO,
         OPENCLAW,
     )
 }

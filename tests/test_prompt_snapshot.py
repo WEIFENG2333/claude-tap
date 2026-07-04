@@ -181,11 +181,44 @@ def test_gemini_snapshot_accepts_cli_camel_case_fields():
     assert snapshot.tools[0].schema["properties"]["path"]["type"] == "string"
 
 
+def test_antigravity_nested_request_exports_as_gemini_prompt():
+    record = _record(
+        "/v1internal:streamGenerateContent?alt=sse",
+        {
+            "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+            "request": {
+                "systemInstruction": {"parts": [{"text": "antigravity system"}]},
+                "contents": [{"role": "user", "parts": [{"text": "inspect the repo"}]}],
+                "tools": [
+                    {
+                        "functionDeclarations": [
+                            {
+                                "name": "read_file",
+                                "description": "Read a file",
+                                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+                            }
+                        ]
+                    }
+                ],
+            },
+        },
+    )
+
+    snapshot = snapshot_from_records([record])
+
+    assert snapshot.provider == "gemini"
+    assert snapshot.model == "MODEL_GOOGLE_GEMINI_2_5_FLASH"
+    assert snapshot.system_prompt == "antigravity system"
+    assert snapshot.user_message == "inspect the repo"
+    assert snapshot.tools[0].name == "read_file"
+
+
 def test_provider_inference_can_fall_back_to_body_shape():
     assert infer_provider(_record("/custom", {"system": "s", "messages": []})) == "anthropic"
     assert infer_provider(_record("/custom", {"instructions": "i", "input": []})) == "openai"
     assert infer_provider(_record("/custom", {"system_instruction": {}, "contents": []})) == "gemini"
     assert infer_provider(_record("/custom", {"systemInstruction": {}, "contents": []})) == "gemini"
+    assert infer_provider(_record("/v1internal:streamGenerateContent", {"request": {"contents": []}})) == "gemini"
 
 
 def test_prompt_markdown_is_comparison_oriented_and_includes_raw_schema():

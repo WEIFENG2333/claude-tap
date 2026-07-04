@@ -90,8 +90,14 @@ class Protocol:
 
 
 def _path_matches(path: str, allowed_paths: tuple[str, ...]) -> bool:
-    clean = path.split("?", 1)[0].rstrip("/")
-    return any(clean == p or clean.startswith(p + "/") for p in allowed_paths)
+    clean = path.split("?", 1)[0].rstrip("/") or "/"
+    for path_prefix in allowed_paths:
+        p = path_prefix.rstrip("/") or "/"
+        if clean == p or clean.startswith(p + "/"):
+            return True
+        if p.endswith(":") and clean.startswith(p):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +250,18 @@ GEMINI = Protocol(
 )
 
 
+ANTIGRAVITY = Protocol(
+    name="antigravity",
+    default_target="https://daily-cloudcode-pa.googleapis.com",
+    allowed_paths=("/v1internal:",),
+    capture_paths=("/v1internal:streamGenerateContent",),
+    capture_methods=("POST",),
+    is_streaming=_gemini_is_streaming,
+    make_reassembler=GeminiReassembler,
+    extract_usage=_gemini_usage,
+)
+
+
 CODEX_APP = Protocol(
     name="codexapp",
     default_target="https://chatgpt.com",
@@ -272,7 +290,7 @@ PASSTHROUGH = Protocol(
 )
 
 
-_REGISTRY: dict[str, Protocol] = {p.name: p for p in (ANTHROPIC, CODEX_APP, OPENAI, GEMINI, PASSTHROUGH)}
+_REGISTRY: dict[str, Protocol] = {p.name: p for p in (ANTHROPIC, ANTIGRAVITY, CODEX_APP, OPENAI, GEMINI, PASSTHROUGH)}
 
 
 def get(name: str) -> Protocol:

@@ -80,8 +80,9 @@ def resolve_target_and_mode(
     4. ``fallback_default_target`` — protocol default.
 
     Mode auto-picks ``reverse`` for clients whose env / CLI-arg redirect is
-    reliable. Some multi-backend clients (opencode / pi / kimi / iflow /
-    hermes) honor a config-file ``baseURL`` over env, so reverse mode would
+    reliable. Some multi-backend clients (opencode / pi / omp / kimi /
+    kimi-code / mimo / iflow / hermes) honor a config-file ``baseURL`` over
+    env, so reverse mode would
     silently capture nothing — those default to ``forward`` (HTTPS_PROXY +
     CA-MITM). OpenClaw is also config-driven, but claude-tap patches a
     temporary OpenClaw config for the child process, so it can stay in reverse
@@ -242,10 +243,11 @@ def _build_run_parser(sub: argparse._SubParsersAction) -> None:
     )
     # Yolo (auto-approve all actions) is on by default. Each client
     # translates this to its own equivalent flag (claude:
-    # --dangerously-skip-permissions; codex: --full-auto; gemini/iflow/
-    # kimi/cursor/qoder/hermes: --yolo; devin: --permission-mode
-    # dangerous; opencode: --dangerously-skip-permissions). Pi has no
-    # one-flag equivalent; we just print a note.
+    # --dangerously-skip-permissions; codex: --full-auto; gemini/kimi/
+    # kimi-code/iflow/cursor/qoder/hermes: --yolo; devin:
+    # --permission-mode dangerous; opencode: --dangerously-skip-permissions;
+    # mimo: --never-ask; omp: --approval-mode yolo. Pi has no one-flag
+    # equivalent; we just print a note.
     p.add_argument(
         "--yolo",
         dest="yolo",
