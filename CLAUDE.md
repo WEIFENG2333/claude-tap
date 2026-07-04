@@ -12,8 +12,9 @@ For workflow / review / commit policy, see [`AGENTS.md`](AGENTS.md).
 ## What is this?
 
 A local HTTP proxy that intercepts the API traffic between an AI coding
-CLI (Claude Code, Codex CLI, Gemini CLI, opencode, Pi, Kimi, iFlow,
-Cursor, Qoder, Devin, Hermes — 11 supported) and the LLM upstream,
+CLI (Claude Code, Codex CLI, Codex App, Gemini CLI, Antigravity CLI,
+Kimi CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, Oh My Pi,
+iFlow, Cursor, Qoder, Devin, Hermes — 17 built in) and the LLM upstream,
 captures every request/response (SSE streams reassembled, WebSocket
 frames decoded), and renders the trace as a single self-contained HTML
 file you can share.
@@ -39,8 +40,8 @@ forward to it verbatim.
 claude_tap/
 ├── cli.py              argparse entry; resolves target + mode; runs the pipeline
 ├── runner.py           spawns the child CLI under the proxy (signal handling, TTY)
-├── clients.py          11 Client instances; per-CLI launch + redirect knowledge
-├── protocols.py        4 Protocol instances; per-upstream wire format
+├── clients.py          built-in Client instances; per-CLI launch + redirect knowledge
+├── protocols.py        Protocol instances; per-upstream wire format
 ├── pipeline.py         transport-agnostic record builder (build_http_record / build_ws_record)
 ├── reverse_proxy.py    aiohttp web app; HTTP + WebSocket relay, SSE streaming
 ├── forward_proxy.py    raw asyncio CONNECT + per-host TLS termination
@@ -73,7 +74,9 @@ tests/
 └── test_e2e_cli.py        `python -m claude_tap …` end-to-end
 ```
 
-188 tests; full suite runs in <5s on a laptop.
+The full test suite runs quickly and covers client registry behavior,
+protocol matching, reverse proxy capture, forward proxy capture, prompt
+export, and viewer rendering.
 
 ---
 
@@ -85,7 +88,8 @@ single-file change:
 * **Protocol** (`protocols.py`) — one upstream API's wire format.
   Fields: `name`, `default_target`, `allowed_paths`, `is_streaming`,
   `rewrite_upstream_path`, `make_reassembler`, `extract_usage`.
-  Concrete: `ANTHROPIC`, `OPENAI`, `GEMINI`, `PASSTHROUGH`.
+  Concrete: `ANTHROPIC`, `OPENAI`, `GEMINI`, `ANTIGRAVITY`,
+  `CODEX_APP`, `PASSTHROUGH`.
 * **Client** (`clients.py`) — one CLI binary's launch metadata.
   Fields: `name`, `cmd`, `label`, `install_url`, `protocols` (1+),
   `env_overrides(proxy_url)`, `cli_args_overrides(proxy_url, env)`,
@@ -185,10 +189,12 @@ mode   = --mode
        ?? "forward"
 ```
 
-`env_redirect_reliable=False` is set on `OPENCODE`, `PI`, `KIMI`,
-`IFLOW`, `HERMES` — those clients honour their config-file `baseURL`
-over any env var we set, so reverse mode silently fails for them and
-the resolver falls back to forward.
+`env_redirect_reliable=False` is set on config-driven, multi-backend, or
+TLS-hard clients such as `CODEX_APP_CLIENT`, `OPENCODE`, `PI`, `OMP`,
+`KIMI`, `KIMI_CODE`, `MIMO`, `IFLOW`, `HERMES`, and `DEVIN`. For those
+clients, config files or runtime behavior can override env vars, so
+reverse mode would silently miss traffic and the resolver falls back to
+forward.
 
 ---
 
@@ -201,10 +207,16 @@ Verified against each CLI's actual source code. Used by
 |-----------|-------------------------------------------------------------------|
 | claude    | `ANTHROPIC_BASE_URL` env                                          |
 | codex     | `~/.codex/config.toml` → `model_provider` → `model_providers.<X>.base_url` |
+| codexapp  | app-server inherits `HTTPS_PROXY`; no reverse-mode config source |
 | gemini    | `GOOGLE_GEMINI_BASE_URL` / `GOOGLE_VERTEX_BASE_URL` / `CODE_ASSIST_ENDPOINT` env |
+| agy       | `CLOUD_CODE_URL` env |
 | opencode  | `~/.config/opencode/opencode.json` → `provider.<active>.options.baseURL` (active = first part of `model: <provider>/<id>`) |
 | pi        | `~/.pi/agent/models.json` → `providers.<defaultProvider>.baseUrl` |
+| omp       | `~/.omp/agent/models.json` → `providers.<defaultProvider>.baseUrl` |
 | kimi      | `~/.kimi/config.toml` → `default_model` → `models.<m>.provider` → `providers.<p>.base_url` |
+| kimi-code | `KIMI_CODE_BASE_URL` / `KIMI_BASE_URL` / `MOONSHOT_BASE_URL` env, then `~/.kimi-code/config.toml` |
+| mimo      | `~/.config/mimocode/mimocode.json` → active provider `baseURL` / `baseUrl` / `base_url` |
+| openclaw  | `~/.openclaw/openclaw.json` or `OPENCLAW_CONFIG_PATH` → active provider `baseUrl` |
 | iflow     | `~/.iflow/settings.json` → `baseUrl` (settings wins over env)     |
 | hermes    | `~/.hermes/config.yaml` → `model.base_url` (per-provider env override for OpenRouter) |
 | cursor    | `CURSOR_API_BASE_URL` env                                         |
@@ -567,9 +579,9 @@ schema, …) consider a small library before hand-rolling.
 
 Before declaring "done":
 
-* `uv run pytest tests/ --timeout=30 -q` — all 188 should pass.
-* `uv run ruff check claude_tap tests` — clean.
-* `uv run ruff format --check claude_tap tests` — clean.
+* `uv run pytest tests/ -x --timeout=60` — the full suite should pass.
+* `uv run ruff check .` — clean.
+* `uv run ruff format --check .` — clean.
 * If touching the viewer: launch `claude-tap live` and walk through
   with Playwright across **all three protocols** (Anthropic, Gemini,
   OpenAI Codex multi-turn). Take screenshots. The CSS gotchas
@@ -595,10 +607,10 @@ The repo has fixture sessions you can copy from any of these:
 
 ### Don't force-push to upstream main
 
-`origin` is `liaohch3/claude-tap` (the upstream). Branch protection
-rejects force-push there. The user's fork is the `fork` remote
-(`WEIFENG2333/claude-tap`); push there. PRs to upstream go through
-`gh pr create`.
+Check `git remote -v` before pushing. In this workspace, the user's fork is
+`fork` (`WEIFENG2333/claude-tap`) and the upstream project may also be present
+as `origin`. Push feature branches to the fork unless the task explicitly says
+otherwise.
 
 ### CSS sticky needs scrollable ancestor without overflow:hidden
 

@@ -6,10 +6,11 @@
 
 Trace what AI coding CLIs actually send to their model APIs.
 
-`claude-tap` runs tools like Claude Code, Codex CLI, Gemini CLI, opencode,
-Kimi, OpenClaw, and others through a local proxy. It records requests,
-streaming responses, tools, token usage, and system prompts, then renders the
-run as a self-contained HTML trace.
+`claude-tap` runs tools like Claude Code, Codex CLI, Gemini CLI,
+Antigravity CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, and Oh My
+Pi through a local proxy. It records requests, streaming responses, tools,
+token usage, and system prompts, then renders the run as a self-contained
+HTML trace.
 
 Use it when you want to answer questions like:
 
@@ -57,7 +58,11 @@ Prefix the AI CLI command with `claude-tap`:
 claude-tap claude -- -p "What is 2+2?"
 claude-tap codex -- exec "Say hi"
 claude-tap gemini -- -p "Explain async/await"
+claude-tap kimi-code -- --prompt "Say hi"
 ```
+
+Use any client name from the support table below. Arguments after `--` are
+passed to that CLI unchanged.
 
 After the CLI exits, `claude-tap` prints paths like:
 
@@ -87,6 +92,8 @@ For prompt-history tools, you usually do not need the whole viewer. Use
 claude-tap run claude --export-prompt claude.prompt.md --no-open -- -p hi
 claude-tap run codex --export-prompt codex.prompt.md --no-open -- exec "hi"
 claude-tap run gemini --export-prompt gemini.prompt.md --no-open -- -p hi
+claude-tap run kimi-code --export-prompt kimi-code.prompt.md --no-open -- --prompt hi
+claude-tap run omp --export-prompt omp.prompt.md --no-open -- --print --mode text --no-session hi
 ```
 
 For CLIs with their own subcommands, pass the client arguments after `--`:
@@ -108,27 +115,33 @@ claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format prompt-md -o 
 
 ## Supported CLIs
 
-Install the AI CLI you want to trace first. `claude-tap` does not install
-Claude Code, Codex, Gemini, or other agent CLIs for you.
+Install the AI CLI you want to trace first. `claude-tap` launches and proxies
+CLIs; it does not install those CLIs for you.
 
 | CLI | Command | Default mode | Status |
 | --- | --- | --- | --- |
 | Claude Code | `claude-tap claude` | reverse | verified |
 | Codex CLI | `claude-tap codex` | reverse | verified |
+| Codex App | `claude-tap codexapp` | forward | verified |
 | Gemini CLI | `claude-tap gemini` | reverse | verified |
-| OpenClaw | `claude-tap openclaw` | reverse | wired |
+| Antigravity CLI | `claude-tap agy` | reverse | wired |
+| Kimi Code | `claude-tap kimi-code` | forward | prompt-export verified |
+| MiMo Code | `claude-tap mimo` | forward | prompt-export verified |
+| OpenClaw | `claude-tap openclaw` | reverse | prompt-export verified |
 | opencode | `claude-tap opencode` | forward | verified |
-| Kimi CLI | `claude-tap kimi` | forward | wired |
-| Pi | `claude-tap pi` | forward | wired |
-| Hermes Agent | `claude-tap hermes` | forward | wired |
+| Kimi CLI | `claude-tap kimi` | forward | prompt-export verified |
+| Pi | `claude-tap pi` | forward | prompt-export verified |
+| Oh My Pi | `claude-tap omp` | forward | prompt-export verified |
+| Hermes Agent | `claude-tap hermes` | forward | prompt-export verified |
 | iFlow CLI | `claude-tap iflow` | forward | verified |
 | Cursor Agent | `claude-tap cursor` | reverse | wired |
 | Qoder CLI | `claude-tap qoder` | reverse | wired |
 | Devin CLI | `claude-tap devin` | forward | wired |
 
-`verified` means a real end-to-end run has been captured. `wired` means the
-client path is implemented and unit-tested, but may still need user
-credentials for a full real-world check.
+`verified` means a real trace has been captured. `prompt-export verified`
+means a real CLI emitted a prompt-bearing request in capture-only mode.
+`wired` means the client path is implemented and unit-tested, but may still
+need user credentials or upstream behavior checks for a full trace.
 
 ## How It Works
 
@@ -139,8 +152,8 @@ It uses two interception modes:
 
 | Mode | Used for | How |
 | --- | --- | --- |
-| reverse | Claude Code, Codex, Gemini, OpenClaw | set a base URL, CLI flag, or temporary child config so the CLI calls `127.0.0.1` |
-| forward | opencode, Kimi, Pi, Hermes, iFlow | set `HTTPS_PROXY` and use a local CA to intercept HTTPS |
+| reverse | Claude Code, Codex, Gemini, Antigravity, OpenClaw, Cursor, Qoder | set a base URL, CLI flag, or temporary child config so the CLI calls `127.0.0.1` |
+| forward | Codex App, opencode, Kimi, Kimi Code, MiMo, Pi, Oh My Pi, Hermes, iFlow, Devin | set `HTTPS_PROXY` and use a local CA to intercept HTTPS |
 
 In both modes, `claude-tap` tries to preserve your real upstream. If your CLI
 already uses a private relay or regional endpoint, `claude-tap` forwards there

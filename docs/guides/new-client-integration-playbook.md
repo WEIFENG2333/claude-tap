@@ -49,7 +49,7 @@ mitmproxy --mode reverse:https://api.example.com --listen-port 8080
 
 ```bash
 # Run the client through claude-tap
-uv run python -m claude_tap --tap-client <name> -- <simple prompt>
+uv run claude-tap run <name> -- <simple prompt>
 
 # Check trace file has actual API calls (not just /models)
 wc -l .traces/trace_*.jsonl  # Should be > 1

@@ -4,9 +4,10 @@
 
 追踪 AI 编程 CLI 实际发给模型 API 的内容。
 
-`claude-tap` 会把 Claude Code、Codex CLI、Gemini CLI、opencode、Kimi、
-OpenClaw 等工具放到本地代理后面运行，记录请求、流式响应、工具列表、token
-用量和 system prompt，并生成一个可以直接打开的 HTML trace。
+`claude-tap` 会把 Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、
+Kimi Code、MiMo Code、OpenClaw、opencode、Pi、Oh My Pi 等工具放到本地代理后面运行，
+记录请求、流式响应、工具列表、token 用量和 system prompt，并生成一个可以直接打开的
+HTML trace。
 
 适合用来回答这些问题：
 
@@ -53,7 +54,10 @@ uv tool install --force git+https://github.com/WEIFENG2333/claude-tap.git
 claude-tap claude -- -p "What is 2+2?"
 claude-tap codex -- exec "Say hi"
 claude-tap gemini -- -p "Explain async/await"
+claude-tap kimi-code -- --prompt "Say hi"
 ```
+
+表格里的 client 名都可以这样传。`--` 后面的参数会原样传给对应 CLI。
 
 CLI 退出后，会输出类似这些文件：
 
@@ -83,6 +87,8 @@ claude-tap -L claude -- -p "Explain async/await"
 claude-tap run claude --export-prompt claude.prompt.md --no-open -- -p hi
 claude-tap run codex --export-prompt codex.prompt.md --no-open -- exec "hi"
 claude-tap run gemini --export-prompt gemini.prompt.md --no-open -- -p hi
+claude-tap run kimi-code --export-prompt kimi-code.prompt.md --no-open -- --prompt hi
+claude-tap run omp --export-prompt omp.prompt.md --no-open -- --print --mode text --no-session hi
 ```
 
 如果某个 CLI 自己还有子命令，把它的参数放在 `--` 后面：
@@ -102,25 +108,31 @@ claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format prompt-md -o 
 
 ## 支持的 CLI
 
-你需要先安装自己想追踪的 AI CLI。`claude-tap` 不会帮你安装 Claude Code、Codex、
-Gemini 这些工具。
+你需要先安装自己想追踪的 AI CLI。`claude-tap` 负责启动和代理这些 CLI，不负责安装它们。
 
 | CLI | 命令 | 默认模式 | 状态 |
 | --- | --- | --- | --- |
 | Claude Code | `claude-tap claude` | reverse | verified |
 | Codex CLI | `claude-tap codex` | reverse | verified |
+| Codex App | `claude-tap codexapp` | forward | verified |
 | Gemini CLI | `claude-tap gemini` | reverse | verified |
-| OpenClaw | `claude-tap openclaw` | reverse | wired |
+| Antigravity CLI | `claude-tap agy` | reverse | wired |
+| Kimi Code | `claude-tap kimi-code` | forward | prompt-export verified |
+| MiMo Code | `claude-tap mimo` | forward | prompt-export verified |
+| OpenClaw | `claude-tap openclaw` | reverse | prompt-export verified |
 | opencode | `claude-tap opencode` | forward | verified |
-| Kimi CLI | `claude-tap kimi` | forward | wired |
-| Pi | `claude-tap pi` | forward | wired |
-| Hermes Agent | `claude-tap hermes` | forward | wired |
+| Kimi CLI | `claude-tap kimi` | forward | prompt-export verified |
+| Pi | `claude-tap pi` | forward | prompt-export verified |
+| Oh My Pi | `claude-tap omp` | forward | prompt-export verified |
+| Hermes Agent | `claude-tap hermes` | forward | prompt-export verified |
 | iFlow CLI | `claude-tap iflow` | forward | verified |
 | Cursor Agent | `claude-tap cursor` | reverse | wired |
 | Qoder CLI | `claude-tap qoder` | reverse | wired |
 | Devin CLI | `claude-tap devin` | forward | wired |
 
-`verified` 表示做过真实端到端捕获。`wired` 表示代码路径已实现并有单测，但完整真实运行可能还需要用户自己的登录态或 API key。
+`verified` 表示做过真实 trace 捕获。`prompt-export verified` 表示真实 CLI 已经在
+capture-only 模式下发出过包含 prompt 的请求。`wired` 表示代码路径已实现并有单测，
+但完整真实运行可能还需要登录态、API key 或上游行为验证。
 
 ## 原理
 
@@ -130,8 +142,8 @@ Gemini 这些工具。
 
 | 模式 | 用于 | 做法 |
 | --- | --- | --- |
-| reverse | Claude Code、Codex、Gemini、OpenClaw | 设置 base URL、CLI 参数或临时子进程配置，让 CLI 请求 `127.0.0.1` |
-| forward | opencode、Kimi、Pi、Hermes、iFlow | 设置 `HTTPS_PROXY`，并用本地 CA 拦截 HTTPS |
+| reverse | Claude Code、Codex、Gemini、Antigravity、OpenClaw、Cursor、Qoder | 设置 base URL、CLI 参数或临时子进程配置，让 CLI 请求 `127.0.0.1` |
+| forward | Codex App、opencode、Kimi、Kimi Code、MiMo、Pi、Oh My Pi、Hermes、iFlow、Devin | 设置 `HTTPS_PROXY`，并用本地 CA 拦截 HTTPS |
 
 两种模式都会尽量保留你原本配置的真实 upstream。如果你的 CLI 本来就走私有 relay 或区域 endpoint，
 `claude-tap` 会继续转发到那里，而不是偷偷换成官方默认地址。

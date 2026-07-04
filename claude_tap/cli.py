@@ -147,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="claude-tap",
         description=(
-            "Trace Claude Code / Codex CLI API traffic through a local proxy.\n\n"
+            "Trace AI coding CLI API traffic through a local proxy.\n\n"
             "If no subcommand is given, ``run`` is implied. Anything after ``--`` is\n"
             "forwarded verbatim to the launched client."
         ),

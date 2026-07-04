@@ -1,6 +1,6 @@
 ---
 owner: claude-tap-maintainers
-last_reviewed: 2026-03-03
+last_reviewed: 2026-07-04
 source_of_truth: AGENTS.md
 ---
 
@@ -85,7 +85,7 @@ Before spawning agents or running automated retry loops:
     ```bash
     # Example: verify Codex through proxy
     tmux new-session -d -s verify \
-      "uv run python -m claude_tap --tap-client codex --tap-target TARGET --tap-no-launch --tap-port 0"
+      "uv run claude-tap proxy --protocol openai --target TARGET --port 0"
     # Then launch client in another window and send a test message
     ```
 
