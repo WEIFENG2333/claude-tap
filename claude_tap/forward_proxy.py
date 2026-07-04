@@ -25,6 +25,7 @@ from claude_tap.pipeline import (
     ProxyContext,
     build_http_record,
     capture_only_response,
+    capture_only_stream_response,
     filter_headers,
     maybe_decompress,
     parse_json_body,
@@ -247,7 +248,15 @@ class ForwardProxyServer:
             log.debug("relay-only -> %s %s (%s)", method, path, protocol.name)
 
         if ctx.capture_only and should_capture:
-            resp_body = capture_only_response(protocol, path, req_body)
+            stream_response = capture_only_stream_response(protocol, path, req_body) if streaming else None
+            if stream_response:
+                resp_body, sse_events, body_bytes = stream_response
+                resp_headers = {"Content-Type": "text/event-stream"}
+            else:
+                resp_body = capture_only_response(protocol, path, req_body)
+                sse_events = None
+                body_bytes = json.dumps(resp_body, separators=(",", ":")).encode()
+                resp_headers = {"Content-Type": "application/json"}
             duration_ms = int((time.monotonic() - t0) * 1000)
             record = build_http_record(
                 request_id=request_id,
@@ -258,14 +267,14 @@ class ForwardProxyServer:
                 req_headers=headers,
                 req_body=req_body,
                 status=200,
-                resp_headers={"Content-Type": "application/json"},
+                resp_headers=resp_headers,
                 resp_body=resp_body,
+                sse_events=sse_events,
                 upstream_base_url=upstream_base,
             )
             await ctx.bus.publish(record)
-            body_bytes = json.dumps(resp_body, separators=(",", ":")).encode()
             client_writer.write(b"HTTP/1.1 200 OK\r\n")
-            client_writer.write(b"Content-Type: application/json\r\n")
+            client_writer.write(f"Content-Type: {resp_headers['Content-Type']}\r\n".encode())
             client_writer.write(f"Content-Length: {len(body_bytes)}\r\n\r\n".encode())
             client_writer.write(body_bytes)
             await client_writer.drain()

@@ -122,6 +122,18 @@ def test_openai_chat_completions_snapshot_extracts_messages_and_function_tool():
     assert snapshot.tools[0].schema["properties"]["id"]["type"] == "string"
 
 
+def test_prefixed_chat_completions_path_is_openai():
+    record = _record(
+        "/coding/v1/chat/completions",
+        {"model": "kimi-for-coding", "messages": [{"role": "system", "content": "kimi system"}]},
+    )
+
+    snapshot = snapshot_from_records([record])
+
+    assert snapshot.provider == "openai"
+    assert snapshot.system_prompt == "kimi system"
+
+
 def test_gemini_snapshot_extracts_system_contents_and_function_declarations():
     record = _record(
         "/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse",

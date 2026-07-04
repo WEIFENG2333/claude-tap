@@ -35,6 +35,7 @@ def test_openai_matches_both_with_and_without_v1():
     assert OPENAI.matches("/v1/responses")
     assert OPENAI.matches("/responses")
     assert OPENAI.matches("/v1/chat/completions")
+    assert OPENAI.matches("/coding/v1/chat/completions")
 
 
 def test_codexapp_relays_all_but_captures_only_response_posts():

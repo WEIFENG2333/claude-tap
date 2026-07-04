@@ -82,6 +82,8 @@ def infer_provider(record: dict[str, Any]) -> str:
         return "openai"
     if path.startswith(("/v1/chat/completions", "/chat/completions", "/v1/completions", "/completions")):
         return "openai"
+    if path.endswith("/chat/completions"):
+        return "openai"
     if "/models/" in path or path.startswith(("/v1beta/models", "/v1/models")):
         return "gemini"
     if path.startswith("/v1internal") and _looks_like_gemini_body(body):

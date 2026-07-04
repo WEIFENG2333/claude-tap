@@ -29,7 +29,7 @@ from aiohttp import web
 from claude_tap.certs import CertificateAuthority, ensure_ca
 from claude_tap.forward_proxy import ForwardProxyServer
 from claude_tap.pipeline import ProxyContext
-from claude_tap.protocols import ANTHROPIC, CODEX_APP
+from claude_tap.protocols import ANTHROPIC, CODEX_APP, OPENAI
 from claude_tap.trace import EventBus, JsonlSink
 
 pytestmark = pytest.mark.asyncio
@@ -257,6 +257,52 @@ async def test_forward_proxy_capture_only_records_without_upstream(trace_dir: Pa
     record = json.loads(lines[0])
     assert record["request"]["body"]["system"] == "system text"
     assert record["response"]["body"]["id"] == "msg_claude_tap_capture"
+
+
+async def test_forward_proxy_capture_only_streams_chat_completions(trace_dir: Path):
+    cert_path, key_path = ensure_ca()
+    ca = CertificateAuthority(cert_path, key_path)
+
+    class FailingSession:
+        async def request(self, *args, **kwargs):
+            raise AssertionError("capture-only must not call upstream")
+
+    bus = EventBus()
+    jsonl_path = trace_dir / "trace.jsonl"
+    bus.subscribe(JsonlSink(jsonl_path))
+    ctx = ProxyContext(
+        protocols=(OPENAI,),
+        target="https://api.openai.com",
+        bus=bus,
+        session=FailingSession(),  # type: ignore[arg-type]
+        capture_only=True,
+    )
+    proxy, proxy_port = await _start_proxy(ctx, ca)
+
+    try:
+        client_ssl = ssl.create_default_context(cafile=str(cert_path))
+        client_connector = aiohttp.TCPConnector(ssl=client_ssl)
+        async with aiohttp.ClientSession(connector=client_connector) as client:
+            async with client.post(
+                "https://api.openai.com/v1/chat/completions",
+                json={"model": "gpt-test", "stream": True, "messages": [{"role": "system", "content": "system text"}]},
+                proxy=f"http://127.0.0.1:{proxy_port}",
+            ) as resp:
+                assert resp.status == 200
+                assert resp.headers["Content-Type"].startswith("text/event-stream")
+                text = await resp.text()
+                assert "chat.completion.chunk" in text
+                assert "captured" in text
+    finally:
+        await proxy.stop()
+        await bus.close_all()
+
+    lines = jsonl_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["request"]["body"]["stream"] is True
+    assert record["response"]["body"]["object"] == "chat.completion"
+    assert record["response"]["sse_events"][-1]["data"] == "[DONE]"
 
 
 async def test_forward_proxy_codexapp_relays_noise_and_records_responses(trace_dir: Path):

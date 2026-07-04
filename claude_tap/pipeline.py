@@ -165,6 +165,50 @@ def capture_only_response(protocol: Protocol, path: str, req_body: object) -> di
     }
 
 
+def capture_only_stream_response(
+    protocol: Protocol, path: str, req_body: object
+) -> tuple[dict, list[dict], bytes] | None:
+    resp_body = capture_only_response(protocol, path, req_body)
+    if protocol.name == "openai" and "chat/completions" in path:
+        model = resp_body.get("model", "claude-tap-capture")
+        chunk_id = resp_body.get("id", "chatcmpl_claude_tap_capture")
+        chunks = [
+            {
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": model,
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "captured"}, "finish_reason": None}],
+            },
+            {
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            },
+            "[DONE]",
+        ]
+        events = [{"event": "message", "data": chunk} for chunk in chunks]
+        return resp_body, events, _sse_bytes(events)
+    return None
+
+
+def _sse_bytes(events: list[dict]) -> bytes:
+    lines: list[str] = []
+    for event in events:
+        event_type = event.get("event")
+        if event_type and event_type != "message":
+            lines.append(f"event: {event_type}")
+        data = event.get("data")
+        if isinstance(data, str):
+            lines.append(f"data: {data}")
+        else:
+            lines.append(f"data: {json.dumps(data, separators=(',', ':'))}")
+        lines.append("")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
 def build_http_record(
     *,
     request_id: str,

@@ -93,6 +93,11 @@ def _path_matches(path: str, allowed_paths: tuple[str, ...]) -> bool:
     clean = path.split("?", 1)[0].rstrip("/") or "/"
     for path_prefix in allowed_paths:
         p = path_prefix.rstrip("/") or "/"
+        if p.startswith("suffix:"):
+            suffix = p[len("suffix:") :].rstrip("/") or "/"
+            if clean == suffix or clean.endswith(suffix):
+                return True
+            continue
         if clean == p or clean.startswith(p + "/"):
             return True
         if p.endswith(":") and clean.startswith(p):
@@ -227,6 +232,9 @@ OPENAI = Protocol(
         "/completions",
         "/models",
         "/embeddings",
+        # Some OpenAI-compatible providers keep their product prefix in the
+        # URL path, e.g. Kimi Code uses /coding/v1/chat/completions.
+        "suffix:/chat/completions",
     ),
     rewrite_upstream_path=_openai_rewrite_upstream_path,
     make_reassembler=OpenAIReassembler,

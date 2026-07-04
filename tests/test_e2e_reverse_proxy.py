@@ -16,7 +16,7 @@ import pytest
 from aiohttp import web
 
 from claude_tap.pipeline import ProxyContext
-from claude_tap.protocols import ANTHROPIC
+from claude_tap.protocols import ANTHROPIC, OPENAI
 from claude_tap.reverse_proxy import build_app
 from claude_tap.trace import EventBus, JsonlSink, StatsSink
 
@@ -151,6 +151,53 @@ async def test_reverse_proxy_capture_only_records_without_upstream(trace_dir: Pa
     record = json.loads(lines[0])
     assert record["request"]["body"]["system"] == "system text"
     assert record["response"]["body"]["id"] == "msg_claude_tap_capture"
+
+
+async def test_reverse_proxy_capture_only_streams_chat_completions(trace_dir: Path):
+    async def fail_if_called(_request: web.Request) -> web.Response:
+        raise AssertionError("capture-only must not call upstream")
+
+    upstream = web.Application(client_max_size=0)
+    upstream.router.add_route("POST", "/v1/chat/completions", fail_if_called)
+    upstream_runner, upstream_port = await _start("127.0.0.1", 0, upstream)
+
+    bus = EventBus()
+    jsonl_path = trace_dir / "trace.jsonl"
+    bus.subscribe(JsonlSink(jsonl_path))
+
+    session = aiohttp.ClientSession(auto_decompress=False, trust_env=True)
+    ctx = ProxyContext(
+        protocols=(OPENAI,),
+        target=f"http://127.0.0.1:{upstream_port}",
+        bus=bus,
+        session=session,
+        capture_only=True,
+    )
+    proxy_runner, proxy_port = await _start("127.0.0.1", 0, build_app(ctx))
+
+    try:
+        async with aiohttp.ClientSession() as client:
+            async with client.post(
+                f"http://127.0.0.1:{proxy_port}/v1/chat/completions",
+                json={"model": "gpt-test", "stream": True, "messages": [{"role": "system", "content": "system text"}]},
+            ) as resp:
+                assert resp.status == 200
+                assert resp.headers["Content-Type"].startswith("text/event-stream")
+                text = await resp.text()
+                assert "chat.completion.chunk" in text
+                assert "captured" in text
+    finally:
+        await session.close()
+        await proxy_runner.cleanup()
+        await upstream_runner.cleanup()
+        await bus.close_all()
+
+    lines = jsonl_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["request"]["body"]["stream"] is True
+    assert record["response"]["body"]["object"] == "chat.completion"
+    assert record["response"]["sse_events"][-1]["data"] == "[DONE]"
 
 
 async def test_reverse_proxy_blocks_unknown_path(trace_dir: Path):
