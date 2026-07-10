@@ -158,14 +158,16 @@ def _extract_request_messages(body: dict) -> list[dict]:
     for item in inp:
         if not isinstance(item, dict):
             continue
-        if item.get("type") == "additional_tools":
-            continue
-        if item.get("type") not in (None, "message") and "role" not in item:
+        item_type = item.get("type")
+        if item_type == "additional_tools" or item.get("role") == "system":
             continue
         role = item.get("role")
-        if not isinstance(role, str) or not role:
-            continue
-        norm.append({"role": role, "content": item.get("content")})
+        if item_type and str(item_type).endswith("_call_output"):
+            role = "tool"
+        elif not isinstance(role, str) or not role:
+            role = "assistant" if item_type else "unknown"
+        content = item.get("content") if item_type in (None, "message") else item
+        norm.append({"role": role, "content": content})
     return norm
 
 
@@ -198,8 +200,10 @@ def _extract_response_tool_names(output: list) -> list[str]:
             for c in item.get("content") or []:
                 if isinstance(c, dict) and c.get("type") == "tool_use":
                     names.append(c.get("name", ""))
-        elif item.get("type") == "function_call":
-            names.append(item.get("name", ""))
+        else:
+            item_type = item.get("type")
+            if isinstance(item_type, str) and item_type.endswith("_call"):
+                names.append(item.get("name") or item_type.removesuffix("_call"))
     return names
 
 
@@ -267,6 +271,16 @@ def extract_metadata(record_json: str) -> dict | None:
                     _extract_response_tool_names((data.get("response") or {}).get("output") or [])
                 )
                 break
+    if not response_tool_names:
+        streamed_items = []
+        for ev in stream_events:
+            if _event_type(ev) != "response.output_item.done":
+                continue
+            data = _event_payload(ev)
+            item = data.get("item") if isinstance(data, dict) else None
+            if isinstance(item, dict):
+                streamed_items.append(item)
+        response_tool_names.extend(_extract_response_tool_names(streamed_items))
 
     error_msg = ""
     if isinstance(resp_body, dict):

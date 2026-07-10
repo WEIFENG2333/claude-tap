@@ -409,6 +409,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); heig
   border-radius: var(--radius-sm); margin-top: 8px; max-height: 400px;
   overflow-y: auto; border: 1px solid rgba(0,0,0,0.06); line-height: 1.5;
 }
+.content-meta { color: var(--text-tertiary); font: 11px var(--mono); margin: 5px 0 7px; word-break: break-all; }
 .content-block { margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
 .content-block:first-child { margin-top: 0; }
 .tool-use-label {
@@ -3314,8 +3315,7 @@ function getEventData(event) {
 
 // Normalize messages across all three upstreams:
 //   Anthropic        body.messages   ([{role, content}])
-//   OpenAI Responses body.input      (mixed item types: message / reasoning /
-//                                     function_call / function_call_output)
+//   OpenAI Responses body.input      (mixed message / reasoning / tool items)
 //   Google Gemini    body.contents   ([{role, parts: [{text|functionCall|…}]}])
 // All paths produce the {role, content: [content-block, …]} shape that
 // renderContent understands.
@@ -3336,52 +3336,87 @@ function getMessages(body) {
     if (item.role === 'system') continue;  // surfaced by extractSystem
     const t = item.type;
     if (t === 'additional_tools') continue;
-
-    if (t === 'function_call') {
-      let input = {};
-      if (item.arguments) {
-        if (typeof item.arguments === 'string') {
-          try { input = JSON.parse(item.arguments); } catch (_) { input = item.arguments; }
-        } else { input = item.arguments; }
-      }
-      out.push({
-        role: 'assistant',
-        content: [{ type: 'tool_use', id: item.call_id, name: item.name, input }],
-      });
-      continue;
-    }
-
-    if (t === 'function_call_output') {
-      out.push({
-        role: 'tool',
-        content: [{ type: 'tool_result', tool_use_id: item.call_id, content: item.output }],
-      });
-      continue;
-    }
-
-    if (t === 'reasoning') {
-      const s = item.summary;
-      const text = Array.isArray(s) ? s.map(p => p?.text || '').join('\n') : (s?.text || '');
-      if (text.trim()) {
-        out.push({ role: 'assistant', content: [{ type: 'thinking', thinking: text }] });
-      }
-      continue;
-    }
-
-    // message (explicit type or legacy {role, content} only)
-    if (typeof item.role !== 'string' || !item.role) continue;
-    out.push({
-      role: item.role,
-      content: Array.isArray(item.content)
-        ? item.content.map(c => {
-            if (!c || typeof c !== 'object') return c;
-            if (c.type === 'input_text' || c.type === 'output_text' || c.type === 'text') return { type: 'text', text: c.text };
-            return c;
-          })
-        : item.content,
-    });
+    const normalized = normalizeOpenAIItem(item);
+    if (normalized) out.push(normalized);
   }
   return out;
+}
+
+function normalizeOpenAIContent(content) {
+  const blocks = Array.isArray(content) ? content : [content];
+  return blocks.filter(block => block !== null && block !== undefined).map(block => {
+    if (typeof block === 'string') return { type: 'text', text: block };
+    if (!block || typeof block !== 'object') return { type: 'raw_item', item_type: typeof block, item: block };
+    if (block.type === 'input_text' || block.type === 'output_text' || block.type === 'text') {
+      return { type: 'text', text: block.text || '' };
+    }
+    return block;
+  });
+}
+
+function parseOpenAIToolArguments(value) {
+  if (typeof value !== 'string') return value ?? {};
+  try { return JSON.parse(value); } catch (_) { return value; }
+}
+
+function normalizeOpenAIItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  const itemType = typeof item.type === 'string' ? item.type : '';
+
+  if (itemType === 'message' || (!itemType && typeof item.role === 'string')) {
+    return { role: item.role || 'unknown', content: normalizeOpenAIContent(item.content) };
+  }
+
+  if (itemType === 'reasoning') {
+    const summary = item.summary;
+    const text = Array.isArray(summary)
+      ? summary.map(part => part?.text || '').join('\n')
+      : (summary?.text || '');
+    if (text.trim()) {
+      return { role: 'assistant', content: [{ type: 'thinking', thinking: text }] };
+    }
+  }
+
+  if (itemType.endsWith('_call_output')) {
+    const isSimpleOutput = itemType === 'function_call_output' || itemType === 'custom_tool_call_output';
+    return {
+      role: 'tool',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: item.call_id || item.id,
+        id: item.id,
+        call_id: item.call_id,
+        status: item.status,
+        item_type: itemType,
+        content: isSimpleOutput && Object.prototype.hasOwnProperty.call(item, 'output') ? item.output : item,
+      }],
+    };
+  }
+
+  if (itemType.endsWith('_call')) {
+    let input = item;
+    if (itemType === 'custom_tool_call') input = item.input ?? '';
+    else if (itemType === 'function_call') input = parseOpenAIToolArguments(item.arguments);
+    return {
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: item.id || item.call_id,
+        call_id: item.call_id,
+        name: item.name || itemType.slice(0, -5),
+        status: item.status,
+        item_type: itemType,
+        input,
+      }],
+    };
+  }
+
+  // Responses evolves frequently. Preserve every unrecognized item in the
+  // readable view instead of requiring users to discover it in Raw JSON.
+  return {
+    role: typeof item.role === 'string' && item.role ? item.role : 'unknown',
+    content: [{ type: 'raw_item', item_type: itemType || 'unknown', item }],
+  };
 }
 
 function getTools(body) {
@@ -3450,19 +3485,8 @@ function normalizeResponseOutput(output) {
   if (!Array.isArray(output) || output.length === 0) return null;
   const content = [];
   for (const item of output) {
-    if (!item || typeof item !== 'object') continue;
-    if (item.type === 'message' && Array.isArray(item.content)) {
-      for (const c of item.content) {
-        if (c?.type === 'output_text') content.push({ type: 'text', text: c.text });
-        else content.push(c);
-      }
-    } else if (item.type === 'function_call') {
-      content.push({ type: 'tool_use', name: item.name, input: item.arguments ? (typeof item.arguments === 'string' ? (() => { try { return JSON.parse(item.arguments); } catch(e) { return item.arguments; } })() : item.arguments) : {} });
-    } else if (item.type === 'reasoning') {
-      if (!item.summary) continue;
-      const summaryText = Array.isArray(item.summary) ? item.summary.map(s => s?.text || '').join('\n') : (item.summary.text || JSON.stringify(item.summary));
-      if (summaryText.trim()) content.push({ type: 'thinking', thinking: summaryText });
-    }
+    const normalized = normalizeOpenAIItem(item);
+    if (normalized && Array.isArray(normalized.content)) content.push(...normalized.content);
   }
   return content.length > 0 ? { content } : null;
 }
@@ -3480,6 +3504,14 @@ function getResponseOutput(entry) {
     const normalized = normalizeResponseOutput(data?.response?.output);
     if (normalized) return normalized;
   }
+  const streamedItems = [];
+  for (const event of events) {
+    if (getEventType(event) !== 'response.output_item.done') continue;
+    const item = getEventData(event)?.item;
+    if (item && typeof item === 'object') streamedItems.push(item);
+  }
+  const fromItems = normalizeResponseOutput(streamedItems);
+  if (fromItems) return fromItems;
   return null;
 }
 // System Prompt is split into a body (the two views) and a small set of
@@ -3555,23 +3587,41 @@ function renderMessages(msgs) {
   }).join('');
 }
 
+function renderContentMeta(block) {
+  const values = [];
+  if (block.item_type) values.push(block.item_type);
+  if (block.status) values.push(block.status);
+  if (block.call_id) values.push('call_id: ' + block.call_id);
+  if (block.id && block.id !== block.call_id) values.push('id: ' + block.id);
+  return values.length ? `<div class="content-meta">${values.map(esc).join(' · ')}</div>` : '';
+}
+
 function renderContent(content, role) {
   if (typeof content === 'string') return `<div class="content-block">${esc(content)}</div>`;
   if (!Array.isArray(content)) return `<pre>${esc(JSON.stringify(content, null, 2))}</pre>`;
   return content.map(block => {
+    if (!block || typeof block !== 'object') return `<div class="content-block"><pre>${esc(JSON.stringify(block, null, 2))}</pre></div>`;
     if (block.type === 'text' || block.type === 'input_text' || block.type === 'output_text') { const txt = block.text || ''; if (!txt.trim()) return ''; return `<div class="content-block">${esc(txt)}</div>`; }
     if (block.type === 'thinking') {
       const thinking = block.thinking || '';
       if (!thinking.trim()) return '';
       return `<div class="content-block"><span class="thinking-label">thinking</span><div class="pre-text">${esc(thinking)}</div></div>`;
     }
-    if (block.type === 'tool_use') return `<div class="content-block"><span class="tool-use-label">${esc(block.name || 'tool_use')}</span><pre>${esc(JSON.stringify(block.input, null, 2))}</pre></div>`;
+    if (block.type === 'tool_use') {
+      const input = typeof block.input === 'string'
+        ? `<div class="pre-text">${esc(block.input || '""')}</div>`
+        : `<pre>${esc(JSON.stringify(block.input, null, 2))}</pre>`;
+      return `<div class="content-block"><span class="tool-use-label">${esc(block.name || 'tool_use')}</span>${renderContentMeta(block)}${input}</div>`;
+    }
     if (block.type === 'tool_result') {
       const rc = block.content;
-      if (typeof rc === 'string') return `<div class="content-block"><span class="tool-use-label">result (${esc(block.tool_use_id || '')})</span><div class="pre-text">${esc(rc)}</div></div>`;
+      const label = `<span class="tool-use-label">result (${esc(block.tool_use_id || '')})</span>${renderContentMeta(block)}`;
+      if (typeof rc === 'string') return `<div class="content-block">${label}<div class="pre-text">${esc(rc)}</div></div>`;
       if (Array.isArray(rc)) {
         const parts = rc.map(c => {
-          if (c.type === 'text') return `<div class="pre-text">${esc(c.text)}</div>`;
+          if (typeof c === 'string') return `<div class="pre-text">${esc(c)}</div>`;
+          if (!c || typeof c !== 'object') return `<pre>${esc(JSON.stringify(c))}</pre>`;
+          if (c.type === 'text' || c.type === 'input_text' || c.type === 'output_text') return `<div class="pre-text">${esc(c.text || '')}</div>`;
           if (c.type === 'image') {
             const s = c.source || {};
             if (s.type === 'base64' && s.data) return `<img src="data:${esc(s.media_type || 'image/png')};base64,${s.data}" style="max-width:100%;border-radius:6px;border:1px solid var(--border);" />`;
@@ -3579,10 +3629,11 @@ function renderContent(content, role) {
           }
           return `<pre>${esc(JSON.stringify(c))}</pre>`;
         }).join('');
-        return `<div class="content-block"><span class="tool-use-label">result</span>${parts}</div>`;
+        return `<div class="content-block">${label}${parts}</div>`;
       }
-      return `<div class="content-block"><pre>${esc(JSON.stringify(block, null, 2))}</pre></div>`;
+      return `<div class="content-block">${label}<pre>${esc(JSON.stringify(rc, null, 2))}</pre></div>`;
     }
+    if (block.type === 'raw_item') return `<div class="content-block"><span class="tool-use-label">${esc(block.item_type || 'unknown')}</span><pre>${esc(JSON.stringify(block.item, null, 2))}</pre></div>`;
     if (block.type === 'image') {
       const src = block.source || {};
       if (src.type === 'base64' && src.data) {
@@ -3593,7 +3644,7 @@ function renderContent(content, role) {
       }
       return `<div class="content-block"><em>[image: ${esc(src.media_type || 'unknown')}]</em></div>`;
     }
-    return `<div class="content-block"><pre>${esc(JSON.stringify(block, null, 2))}</pre></div>`;
+    return `<div class="content-block"><span class="tool-use-label">${esc(block.type || 'unknown')}</span><pre>${esc(JSON.stringify(block, null, 2))}</pre></div>`;
   }).join('');
 }
 

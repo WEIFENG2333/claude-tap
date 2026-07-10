@@ -149,6 +149,90 @@ def test_extract_metadata_pulls_additional_tools_from_responses_input():
     assert meta["tool_names"] == ["exec", "wait", "collaboration"]
 
 
+def test_extract_metadata_counts_custom_tool_items_and_response_calls():
+    record = {
+        "turn": 9,
+        "request_id": "req_custom",
+        "request": {
+            "method": "POST",
+            "path": "/v1/responses",
+            "headers": {},
+            "body": {
+                "model": "gpt-5.6-sol",
+                "input": [
+                    {"type": "message", "role": "user", "content": "inspect"},
+                    {
+                        "type": "custom_tool_call",
+                        "status": "completed",
+                        "call_id": "call_exec",
+                        "name": "exec",
+                        "input": "text(await tools.exec_command({cmd: 'pwd'}));",
+                    },
+                    {
+                        "type": "custom_tool_call_output",
+                        "call_id": "call_exec",
+                        "output": [{"type": "input_text", "text": "/tmp/project"}],
+                    },
+                    {"type": "future_item", "payload": {"kept": True}},
+                ],
+            },
+        },
+        "response": {
+            "status": 200,
+            "headers": {},
+            "body": {
+                "output": [
+                    {
+                        "type": "custom_tool_call",
+                        "status": "completed",
+                        "call_id": "call_next",
+                        "name": "wait",
+                        "input": "{}",
+                    }
+                ]
+            },
+        },
+    }
+
+    meta = extract_metadata(json.dumps(record))
+
+    assert meta is not None
+    assert meta["message_count"] == 4
+    assert meta["response_tool_names"] == ["wait"]
+
+
+def test_extract_metadata_reads_custom_tool_call_from_streamed_item():
+    record = {
+        "turn": 10,
+        "request_id": "req_streamed_custom",
+        "request": {
+            "method": "POST",
+            "path": "/v1/responses",
+            "headers": {},
+            "body": {"model": "gpt-5.6-sol", "input": []},
+        },
+        "response": {
+            "status": 200,
+            "headers": {},
+            "body": {"output": []},
+            "sse_events": [
+                {
+                    "event": "response.output_item.done",
+                    "data": {
+                        "type": "response.output_item.done",
+                        "item": {"type": "custom_tool_call", "name": "exec", "input": "pwd"},
+                    },
+                }
+            ],
+        },
+    }
+
+    meta = extract_metadata(json.dumps(record))
+
+    assert meta is not None
+    assert meta["response_tool_names"] == ["exec"]
+
+
 def test_extract_metadata_handles_garbage():
     assert extract_metadata("not json") is None
 
