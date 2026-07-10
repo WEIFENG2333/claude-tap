@@ -158,6 +158,8 @@ def _extract_request_messages(body: dict) -> list[dict]:
     for item in inp:
         if not isinstance(item, dict):
             continue
+        if item.get("type") == "additional_tools":
+            continue
         if item.get("type") not in (None, "message") and "role" not in item:
             continue
         role = item.get("role")
@@ -165,6 +167,24 @@ def _extract_request_messages(body: dict) -> list[dict]:
             continue
         norm.append({"role": role, "content": item.get("content")})
     return norm
+
+
+def _extract_request_tools(body: dict) -> list[dict]:
+    if not isinstance(body, dict):
+        return []
+    tools = [tool for tool in body.get("tools") or [] if isinstance(tool, dict)]
+    for item in body.get("input") or []:
+        if not isinstance(item, dict) or item.get("type") != "additional_tools":
+            continue
+        tools.extend(tool for tool in item.get("tools") or [] if isinstance(tool, dict))
+    return tools
+
+
+def _request_tool_name(tool: dict) -> str:
+    function = tool.get("function")
+    if isinstance(function, dict) and function.get("name"):
+        return str(function["name"])
+    return str(tool.get("name") or tool.get("type") or "")
 
 
 def _extract_response_tool_names(output: list) -> list[str]:
@@ -226,8 +246,8 @@ def extract_metadata(record_json: str) -> dict | None:
         sys_text = body["instructions"]
 
     msgs = _extract_request_messages(body)
-    tools = body.get("tools") or []
-    tool_names = [t.get("name", "") for t in tools if isinstance(t, dict)]
+    tools = _extract_request_tools(body)
+    tool_names = [_request_tool_name(tool) for tool in tools]
 
     response_tool_names: list[str] = []
     rc = resp_body.get("content") or [] if isinstance(resp_body, dict) else []

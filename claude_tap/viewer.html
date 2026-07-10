@@ -2399,9 +2399,9 @@ function matchSearch(e, q) {
     if (sys.toLowerCase().includes(q)) return true;
     const turn = String(e.turn || '');
     if (turn.includes(q)) return true;
-    const tools = e.request?.body?.tools || [];
+    const tools = getTools(e.request?.body);
     for (const td of tools) {
-      if ((td.name || '').toLowerCase().includes(q)) return true;
+      if (getToolName(td).toLowerCase().includes(q)) return true;
     }
     const rc = e.response?.body?.content;
     if (Array.isArray(rc)) {
@@ -2420,10 +2420,11 @@ function matchSearch(e, q) {
     const mc = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
     if (mc.toLowerCase().includes(q)) return true;
   }
-  const tools = body?.tools || [];
+  const tools = getTools(body);
   for (const td of tools) {
-    if ((td.name || '').toLowerCase().includes(q)) return true;
-    if ((td.description || '').toLowerCase().includes(q)) return true;
+    const definition = td.function && typeof td.function === 'object' ? td.function : td;
+    if (getToolName(td).toLowerCase().includes(q)) return true;
+    if ((definition.description || td.description || '').toLowerCase().includes(q)) return true;
   }
   const ro = getResponseOutput(e);
   const rc = ro?.content;
@@ -2515,7 +2516,7 @@ function getEntrySearchText(entry) {
   parts.push(body?.model || '');
   parts.push(extractSystem(body) || '');
   getMessages(body).forEach(m => parts.push(msgToText(m)));
-  (body?.tools || []).forEach(td => parts.push(JSON.stringify(td)));
+  getTools(body).forEach(td => parts.push(JSON.stringify(td)));
   const output = getResponseOutput(resolved);
   if (output?.content) parts.push(msgToText({ role: 'assistant', content: output.content }));
   getResponseEvents(resolved).forEach(ev => parts.push(JSON.stringify(ev)));
@@ -2813,8 +2814,8 @@ function getTaskFingerprint(e) {
   }
 
   // Stable fingerprint: full system + sorted tool names.
-  const tools = body.tools || [];
-  const toolKey = tools.map(t => t.name).sort().join(',');
+  const tools = getTools(body);
+  const toolKey = tools.map(getToolName).sort().join(',');
   const fp = sysText + '|' + toolKey;
 
   // Friendly short label: substring rule, else first non-empty line, else tool count.
@@ -3209,8 +3210,8 @@ function renderDetail(e) {
     ${usage ? renderTokenChips(usage) : ''}
   </div>`;
 
-  const tools = reqBody?.tools;
-  if (tools && tools.length) html += section(t('section_tools'), renderTools(tools), false, null, tools.length + ' ' + t('badge_tools'));
+  const tools = getTools(reqBody);
+  if (tools.length) html += section(t('section_tools'), renderTools(tools), false, null, tools.length + ' ' + t('badge_tools'));
 
   const sysPrompt = extractSystem(reqBody);
   if (sysPrompt) {
@@ -3334,6 +3335,7 @@ function getMessages(body) {
     if (!item || typeof item !== 'object') continue;
     if (item.role === 'system') continue;  // surfaced by extractSystem
     const t = item.type;
+    if (t === 'additional_tools') continue;
 
     if (t === 'function_call') {
       let input = {};
@@ -3380,6 +3382,21 @@ function getMessages(body) {
     });
   }
   return out;
+}
+
+function getTools(body) {
+  if (!body || typeof body !== 'object') return [];
+  const tools = Array.isArray(body.tools) ? [...body.tools] : [];
+  if (Array.isArray(body.input)) {
+    body.input.forEach(item => {
+      if (item?.type === 'additional_tools' && Array.isArray(item.tools)) tools.push(...item.tools);
+    });
+  }
+  return tools.filter(tool => tool && typeof tool === 'object');
+}
+
+function getToolName(tool) {
+  return tool?.name || tool?.function?.name || tool?.type || '';
 }
 
 // Convert one Gemini ``contents[]`` item into our {role, content[]} shape.
@@ -3584,9 +3601,10 @@ function renderTools(tools) {
   const blocks = tools.map(td => {
     // OpenAI Responses API built-in tools (web_search / file_search /
     // code_interpreter / ...) identify by ``type`` and have no ``name``.
-    const name = td.name || td.type || 'unknown', desc = td.description || '';
+    const definition = td.function && typeof td.function === 'object' ? td.function : td;
+    const name = getToolName(td) || 'unknown', desc = definition.description || td.description || '';
     const shortDesc = desc.split('\n')[0].substring(0, 120);
-    const schema = td.input_schema || td.parameters || {};
+    const schema = definition.input_schema || definition.parameters || {};
     const props = schema.properties || {};
     const required = new Set(schema.required || []);
     const keys = Object.keys(props);
@@ -4322,8 +4340,8 @@ function structuralDiff(oldB, newB) {
   d.oldSystemText = oldSys;
   d.newSystemText = newSys;
   // Tools — find added/removed by name
-  const oldTools = (oldB.tools || []).map(x => x.name);
-  const newTools = (newB.tools || []).map(x => x.name);
+  const oldTools = getTools(oldB).map(getToolName);
+  const newTools = getTools(newB).map(getToolName);
   const oldSet = new Set(oldTools), newSet = new Set(newTools);
   d.addedTools = newTools.filter(n => !oldSet.has(n));
   d.removedTools = oldTools.filter(n => !newSet.has(n));

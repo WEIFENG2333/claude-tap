@@ -4,14 +4,17 @@ Date: 2026-07-10
 
 ## What broke
 
-Codex CLI 0.144.x prompt exports rendered `_No tools captured._` even though
-the CLI still sent tool definitions in its Responses API request.
+Codex CLI 0.144.x prompt exports rendered `_No tools captured._`, and the HTML
+trace viewer omitted the same tools, even though the CLI still sent their
+definitions in its Responses API request.
 
 ## Root cause
 
 Codex moved its tool declarations from the top-level `tools` field to an
-`additional_tools` item inside the request `input` list. Prompt snapshot
-scoring and rendering only inspected the former location.
+`additional_tools` item inside the request `input` list. Prompt snapshot and
+viewer normalization only inspected the former location. The viewer also
+treated the `additional_tools` item as an empty developer message because it
+has a `role` field.
 
 ## What actually fixed it
 
@@ -23,6 +26,8 @@ scoring and rendering a snapshot:
 
 The behavior was verified against a real Codex 0.144.0 trace, which exported
 the `collaboration`, `exec`, `request_user_input`, and `wait` tool declarations.
+The same trace now shows all four tools in the HTML viewer without adding a
+spurious empty message.
 
 ## Lessons
 
@@ -31,3 +36,5 @@ the `collaboration`, `exec`, `request_user_input`, and `wait` tool declarations.
 2. When a client upgrade appears to remove tools, inspect the complete request
    input before concluding that the tool surface was removed.
 3. Validate prompt exporters against real traces after client protocol changes.
+4. Keep prompt export, lazy metadata, search, diff, and detail rendering aligned
+   when a provider wire format changes.

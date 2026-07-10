@@ -115,6 +115,40 @@ def test_extract_metadata_pulls_tokens_and_model():
     assert meta["response_tool_names"] == ["Read"]
 
 
+def test_extract_metadata_pulls_additional_tools_from_responses_input():
+    record = {
+        "turn": 8,
+        "request_id": "req_codex",
+        "request": {
+            "method": "POST",
+            "path": "/v1/responses",
+            "headers": {},
+            "body": {
+                "model": "gpt-5.4",
+                "input": [
+                    {
+                        "type": "additional_tools",
+                        "role": "developer",
+                        "tools": [
+                            {"type": "custom", "name": "exec"},
+                            {"type": "function", "name": "wait"},
+                            {"type": "namespace", "name": "collaboration", "tools": []},
+                        ],
+                    },
+                    {"type": "message", "role": "user", "content": "hello"},
+                ],
+            },
+        },
+        "response": {"status": 200, "headers": {}, "body": {}},
+    }
+
+    meta = extract_metadata(json.dumps(record))
+
+    assert meta is not None
+    assert meta["message_count"] == 1
+    assert meta["tool_names"] == ["exec", "wait", "collaboration"]
+
+
 def test_extract_metadata_handles_garbage():
     assert extract_metadata("not json") is None
 
