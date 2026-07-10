@@ -412,6 +412,9 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); heig
 .content-meta { color: var(--text-tertiary); font: 11px var(--mono); margin: 5px 0 7px; word-break: break-all; }
 .content-block { margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
 .content-block:first-child { margin-top: 0; }
+.msg.reasoning-only { padding: 8px 12px; }
+.reasoning-placeholder-row { display: flex; align-items: center; gap: 8px; margin: 0; }
+.reasoning-placeholder-row .content-meta { margin: 0; }
 .tool-use-label {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 600; color: var(--cyan);
@@ -1532,6 +1535,7 @@ const I18N = {
     tok_input: "Input", tok_output: "Output", tok_cache_read: "Cache Read", tok_cache_create: "Cache Create",
     empty_state: "No entries for selected paths", no_prev: "No previous request",
     no_content: "No content", no_messages: "No messages in either request",
+    reasoning_label: "reasoning", reasoning_unavailable: "Content unavailable",
     diff_unchanged: "previous messages unchanged", diff_msg_range: "message #1 ~ #",
     diff_new: "new", diff_removed: "removed", diff_added: "added", diff_changed: "changed",
     diff_no_change: "no change", diff_unchanged_lbl: "unchanged",
@@ -1579,6 +1583,7 @@ const I18N = {
     tok_input: "输入", tok_output: "输出", tok_cache_read: "缓存读取", tok_cache_create: "缓存创建",
     empty_state: "当前路径下无条目", no_prev: "无前序请求",
     no_content: "无内容", no_messages: "两次请求均无消息",
+    reasoning_label: "思考", reasoning_unavailable: "内容不可查看",
     diff_unchanged: "条前序消息未变化", diff_msg_range: "消息 #1 ~ #",
     diff_new: "新增", diff_removed: "移除", diff_added: "新增", diff_changed: "变化",
     diff_no_change: "无变化", diff_unchanged_lbl: "无变化",
@@ -3375,6 +3380,13 @@ function normalizeOpenAIItem(item) {
     if (text.trim()) {
       return { role: 'assistant', content: [{ type: 'thinking', thinking: text }] };
     }
+    return {
+      role: 'assistant',
+      content: [{
+        type: 'reasoning_placeholder',
+        content_length: typeof item.encrypted_content === 'string' ? item.encrypted_content.length : 0,
+      }],
+    };
   }
 
   if (itemType.endsWith('_call_output')) {
@@ -3583,7 +3595,9 @@ function renderMessages(msgs) {
   return msgs.map(m => {
     const role = m.role || 'unknown';
     const cls = roleClass(role);
-    return `<div class="msg ${cls}"><div class="msg-role">${esc(role)}</div>${renderContent(m.content, role)}</div>`;
+    const reasoningOnly = Array.isArray(m.content) && m.content.length === 1 && m.content[0]?.type === 'reasoning_placeholder';
+    const roleLabel = reasoningOnly ? '' : `<div class="msg-role">${esc(role)}</div>`;
+    return `<div class="msg ${cls}${reasoningOnly ? ' reasoning-only' : ''}">${roleLabel}${renderContent(m.content, role)}</div>`;
   }).join('');
 }
 
@@ -3606,6 +3620,10 @@ function renderContent(content, role) {
       const thinking = block.thinking || '';
       if (!thinking.trim()) return '';
       return `<div class="content-block"><span class="thinking-label">thinking</span><div class="pre-text">${esc(thinking)}</div></div>`;
+    }
+    if (block.type === 'reasoning_placeholder') {
+      const length = block.content_length > 0 ? ` · ${block.content_length.toLocaleString(currentLang)} ${t('diff_chars')}` : '';
+      return `<div class="content-block reasoning-placeholder-row"><span class="thinking-label">${t('reasoning_label')}</span><span class="content-meta">${t('reasoning_unavailable')}${length}</span></div>`;
     }
     if (block.type === 'tool_use') {
       const input = typeof block.input === 'string'
@@ -4061,6 +4079,10 @@ function copyResponseText(btn) {
     if (!b) continue;
     if (b.type === 'text' && typeof b.text === 'string') parts.push(b.text);
     else if (b.type === 'thinking' && typeof b.thinking === 'string') parts.push('[thinking]\n' + b.thinking);
+    else if (b.type === 'reasoning_placeholder') {
+      const length = b.content_length > 0 ? ` · ${b.content_length.toLocaleString(currentLang)} ${t('diff_chars')}` : '';
+      parts.push('[' + t('reasoning_label') + ': ' + t('reasoning_unavailable') + length + ']');
+    }
     else if (b.type === 'tool_use') parts.push(`[tool_use: ${b.name || ''}]\n` + JSON.stringify(b.input || {}, null, 2));
   }
   copyToClipboard(parts.join('\n\n').trim(), btn);
@@ -4333,6 +4355,7 @@ function msgToText(m) {
   return c.map(b => {
     if (b.type === 'text' || b.type === 'input_text' || b.type === 'output_text') return b.text || '';
     if (b.type === 'thinking') return '[thinking]\n' + (b.thinking || '');
+    if (b.type === 'reasoning_placeholder') return '[reasoning unavailable]';
     if (b.type === 'tool_use') return '[tool_use: ' + (b.name || '') + ']\n' + JSON.stringify(b.input, null, 2);
     if (b.type === 'tool_result') {
       const rc = b.content;

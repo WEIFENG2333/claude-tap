@@ -37,3 +37,12 @@ synthetic future item types on both request and response paths.
    streamed fallback through the same item-type rules.
 3. Use type families for evolving API records, with specialized rendering only
    where it improves readability without hiding fields.
+
+## Follow-up: opaque reasoning content
+
+The generic fallback initially rendered `reasoning` items with an empty
+`summary` as full JSON, including very large `encrypted_content` values. These
+values are useful for protocol continuity but have no readable value in the
+message view. Empty-summary reasoning now renders as one compact row that says
+the content is unavailable and reports only its size. Protocol metadata and the
+original value remain available in Full JSON.
