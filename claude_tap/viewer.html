@@ -412,6 +412,9 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); heig
 .content-meta { color: var(--text-tertiary); font: 11px var(--mono); margin: 5px 0 7px; word-break: break-all; }
 .content-block { margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
 .content-block:first-child { margin-top: 0; }
+.content-block.text-block {
+  max-height: min(55vh, 480px); overflow-y: auto; overscroll-behavior: contain;
+}
 .msg.reasoning-only { padding: 8px 12px; }
 .reasoning-placeholder-row { display: flex; align-items: center; gap: 8px; margin: 0; }
 .reasoning-placeholder-row .content-meta { margin: 0; }
@@ -445,6 +448,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); heig
 .tb-desc { color: var(--text-tertiary); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tool-block-body {
   display: none; padding: 10px 12px 12px; border-top: 1px solid var(--border-light); font-size: 12px;
+  max-height: min(60vh, 520px); overflow: auto; overscroll-behavior: contain;
 }
 .tool-block-body.open { display: block; }
 .tb-full-desc {
@@ -511,6 +515,7 @@ body { font-family: var(--sans); background: var(--bg); color: var(--text); heig
 .md-tab.active { background: var(--bg-card); color: var(--text); font-weight: 600; }
 .md-host[data-mode="raw"] .md-view-md { display: none; }
 .md-host[data-mode="md"]  .md-view-raw { display: none; }
+.md-view-md { max-height: 500px; overflow: auto; overscroll-behavior: contain; }
 .md-body { line-height: 1.55; font-size: 13px; color: var(--text); }
 .md-body h1, .md-body h2, .md-body h3, .md-body h4 { margin: 12px 0 6px; line-height: 1.3; }
 .md-body h1 { font-size: 18px; }
@@ -3611,11 +3616,11 @@ function renderContentMeta(block) {
 }
 
 function renderContent(content, role) {
-  if (typeof content === 'string') return `<div class="content-block">${esc(content)}</div>`;
+  if (typeof content === 'string') return `<div class="content-block text-block">${esc(content)}</div>`;
   if (!Array.isArray(content)) return `<pre>${esc(JSON.stringify(content, null, 2))}</pre>`;
   return content.map(block => {
     if (!block || typeof block !== 'object') return `<div class="content-block"><pre>${esc(JSON.stringify(block, null, 2))}</pre></div>`;
-    if (block.type === 'text' || block.type === 'input_text' || block.type === 'output_text') { const txt = block.text || ''; if (!txt.trim()) return ''; return `<div class="content-block">${esc(txt)}</div>`; }
+    if (block.type === 'text' || block.type === 'input_text' || block.type === 'output_text') { const txt = block.text || ''; if (!txt.trim()) return ''; return `<div class="content-block text-block">${esc(txt)}</div>`; }
     if (block.type === 'thinking') {
       const thinking = block.thinking || '';
       if (!thinking.trim()) return '';
