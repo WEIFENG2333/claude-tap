@@ -172,7 +172,7 @@ def _anthropic_snapshot(record: dict[str, Any]) -> PromptSnapshot:
 def _openai_snapshot(record: dict[str, Any]) -> PromptSnapshot:
     body = _request_body(record)
     system_prompt, developer_prompt, user_message = _prompt_text_for_provider("openai", body)
-    tools = tuple(_openai_tools(body.get("tools")))
+    tools = tuple(_openai_body_tools(body))
     return _base_snapshot(
         record,
         provider="openai",
@@ -274,7 +274,7 @@ def _tools_for_provider(provider: str, body: dict[str, Any]) -> list[PromptTool]
     if provider == "anthropic":
         return _anthropic_tools(body.get("tools"))
     if provider == "openai":
-        return _openai_tools(body.get("tools"))
+        return _openai_body_tools(body)
     if provider == "gemini":
         return _gemini_tools(body.get("tools"))
     return []
@@ -443,6 +443,19 @@ def _openai_tools(tools: Any) -> list[PromptTool]:
             )
         )
     return out
+
+
+def _openai_body_tools(body: dict[str, Any]) -> list[PromptTool]:
+    tools: list[Any] = []
+    if isinstance(body.get("tools"), list):
+        tools.extend(body["tools"])
+    if isinstance(body.get("input"), list):
+        for item in body["input"]:
+            if not isinstance(item, dict) or item.get("type") != "additional_tools":
+                continue
+            if isinstance(item.get("tools"), list):
+                tools.extend(item["tools"])
+    return _openai_tools(tools)
 
 
 def _gemini_tools(tools: Any) -> list[PromptTool]:

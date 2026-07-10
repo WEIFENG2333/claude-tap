@@ -89,6 +89,66 @@ def test_openai_responses_snapshot_extracts_instructions_roles_and_tools():
     assert snapshot.tools[0].schema["properties"]["plan"]["type"] == "array"
 
 
+def test_openai_responses_snapshot_extracts_additional_tools_from_input():
+    probe = _record(
+        "/v1/responses",
+        {
+            "model": "gpt-5.4",
+            "input": [
+                {"role": "developer", "content": "probe rules"},
+                {"role": "user", "content": "probe"},
+            ],
+        },
+        turn=1,
+    )
+    record = _record(
+        "/v1/responses",
+        {
+            "model": "gpt-5.4",
+            "input": [
+                {
+                    "type": "additional_tools",
+                    "role": "developer",
+                    "tools": [
+                        {
+                            "type": "custom",
+                            "name": "exec",
+                            "description": "Run tool calls",
+                            "format": {"type": "grammar", "syntax": "lark"},
+                        },
+                        {
+                            "type": "function",
+                            "name": "wait",
+                            "description": "Wait for a running call",
+                            "parameters": {"type": "object", "properties": {"cell_id": {"type": "string"}}},
+                        },
+                        {
+                            "type": "namespace",
+                            "name": "collaboration",
+                            "description": "Collaborate with other agents",
+                            "tools": [{"type": "function", "name": "spawn_agent"}],
+                        },
+                    ],
+                },
+                {"role": "developer", "content": [{"type": "input_text", "text": "developer rules"}]},
+                {"role": "user", "content": [{"type": "input_text", "text": "do the thing"}]},
+            ],
+        },
+        turn=2,
+    )
+
+    snapshot = snapshot_from_records([probe, record])
+    markdown = render_prompt_markdown(snapshot)
+
+    assert snapshot.turn == 2
+    assert snapshot.developer_prompt == "developer rules"
+    assert snapshot.user_message == "do the thing"
+    assert [tool.name for tool in snapshot.tools] == ["exec", "wait", "collaboration"]
+    assert snapshot.tools[1].schema["properties"]["cell_id"]["type"] == "string"
+    assert "## collaboration" in markdown
+    assert "_No tools captured._" not in markdown
+
+
 def test_openai_chat_completions_snapshot_extracts_messages_and_function_tool():
     record = _record(
         "/v1/chat/completions",
