@@ -28,8 +28,11 @@ an older project and does not include this rewrite yet.
 Requires Python 3.11+ and `git`.
 
 ```bash
-uv tool install git+https://github.com/WEIFENG2333/claude-tap.git
+uv tool install git+https://github.com/WEIFENG2333/claude-tap.git@main
 ```
+
+`@main` installs the newest commit on this fork's `main` branch at that time.
+Installed tools do not update automatically.
 
 Verify:
 
@@ -41,13 +44,13 @@ If `claude-tap` is not found, make sure your uv tool bin directory is on
 `PATH`. You can also run it directly from GitHub:
 
 ```bash
-uv tool run --from git+https://github.com/WEIFENG2333/claude-tap.git claude-tap --version
+uv tool run --from git+https://github.com/WEIFENG2333/claude-tap.git@main claude-tap --version
 ```
 
 Upgrade this fork with:
 
 ```bash
-uv tool install --force git+https://github.com/WEIFENG2333/claude-tap.git
+uv tool upgrade claude-tap
 ```
 
 ## Quick Start

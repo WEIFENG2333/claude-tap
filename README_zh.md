@@ -24,8 +24,10 @@ HTML trace。
 需要 Python 3.11+ 和 `git`。
 
 ```bash
-uv tool install git+https://github.com/WEIFENG2333/claude-tap.git
+uv tool install git+https://github.com/WEIFENG2333/claude-tap.git@main
 ```
+
+`@main` 会安装这个 fork 的 `main` 分支在当时的最新提交。安装后不会自动更新。
 
 验证：
 
@@ -37,13 +39,13 @@ claude-tap --version
 GitHub 运行：
 
 ```bash
-uv tool run --from git+https://github.com/WEIFENG2333/claude-tap.git claude-tap --version
+uv tool run --from git+https://github.com/WEIFENG2333/claude-tap.git@main claude-tap --version
 ```
 
 升级这个 fork：
 
 ```bash
-uv tool install --force git+https://github.com/WEIFENG2333/claude-tap.git
+uv tool upgrade claude-tap
 ```
 
 ## 快速开始
