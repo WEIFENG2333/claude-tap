@@ -18,6 +18,8 @@ def fake_home(tmp_path: Path, monkeypatch) -> Path:
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
+        "XAI_API_KEY",
+        "GROK_CODE_XAI_API_KEY",
         "ANTHROPIC_BASE_URL",
         "OPENAI_BASE_URL",
         "GOOGLE_GEMINI_BASE_URL",
@@ -38,6 +40,9 @@ def fake_home(tmp_path: Path, monkeypatch) -> Path:
         "MOONSHOT_BASE_URL",
         "MIMOCODE_CONFIG",
         "MIMOCODE_MIMO_ONLY",
+        "GROK_HOME",
+        "GROK_XAI_API_BASE_URL",
+        "GROK_CLI_CHAT_PROXY_BASE_URL",
     ):
         monkeypatch.delenv(v, raising=False)
     return tmp_path
@@ -55,6 +60,7 @@ def test_registry_lists_known_clients():
         "cursor",
         "devin",
         "gemini",
+        "grok",
         "hermes",
         "iflow",
         "kimi",
@@ -108,6 +114,15 @@ def test_claude_env_redirects_anthropic_base_url():
 def test_gemini_env_uses_google_var():
     env = clients.get("gemini").env_overrides("http://127.0.0.1:8080")
     assert env == {"GOOGLE_GEMINI_BASE_URL": "http://127.0.0.1:8080"}
+
+
+def test_grok_env_redirects_api_and_auxiliary_requests():
+    env = clients.get("grok").env_overrides("http://127.0.0.1:8080")
+    assert env == {
+        "GROK_CLI_CHAT_PROXY_BASE_URL": "http://127.0.0.1:8080/v1",
+        "GROK_XAI_API_BASE_URL": "http://127.0.0.1:8080/v1",
+        "GROK_DISABLE_AUTOUPDATER": "1",
+    }
 
 
 def test_antigravity_env_uses_cloud_code_url():
@@ -233,6 +248,7 @@ def test_single_protocol_clients():
     assert [p.name for p in clients.get("codex").protocols] == ["openai"]
     assert [p.name for p in clients.get("codexapp").protocols] == ["codexapp"]
     assert [p.name for p in clients.get("gemini").protocols] == ["gemini"]
+    assert [p.name for p in clients.get("grok").protocols] == ["openai", "passthrough"]
 
 
 def test_multi_backend_clients_advertise_three_protocols():
@@ -251,6 +267,7 @@ def test_yolo_args_match_each_cli_published_flag():
         "codex": ("--dangerously-bypass-approvals-and-sandbox",),
         "codexapp": (),
         "gemini": ("--yolo",),
+        "grok": ("--always-approve",),
         "opencode": ("--dangerously-skip-permissions",),
         "kimi": ("--yolo",),
         "kimi-code": ("--yolo",),
@@ -354,6 +371,30 @@ def test_gemini_configured_reads_each_env_in_priority_order():
 
 def test_gemini_configured_returns_none_when_no_env():
     assert clients.get("gemini").read_configured_upstream({}) is None
+
+
+def test_grok_configured_uses_endpoint_for_active_auth_mode(fake_home: Path):
+    cfg = fake_home / ".grok" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        "[endpoints]\n"
+        'xai_api_base_url = "https://api-relay.example.com/v1"\n'
+        'cli_chat_proxy_base_url = "https://session-relay.example.com/v1"\n',
+        encoding="utf-8",
+    )
+    grok = clients.get("grok")
+
+    assert grok.read_configured_upstream({}) == "https://session-relay.example.com/v1"
+    assert grok.read_configured_upstream({"XAI_API_KEY": "x"}) == "https://api-relay.example.com/v1"
+
+
+def test_grok_configured_env_wins_over_config(fake_home: Path):
+    env = {
+        "XAI_API_KEY": "x",
+        "GROK_XAI_API_BASE_URL": "https://env.example.com/v1/",
+        "GROK_CLI_CHAT_PROXY_BASE_URL": "https://session.example.com/v1",
+    }
+    assert clients.get("grok").read_configured_upstream(env) == "https://env.example.com/v1"
 
 
 def test_antigravity_configured_reads_cloud_code_url():
@@ -733,6 +774,22 @@ def test_gemini_apikey_env(fake_home: Path, monkeypatch):
     info = clients.get("gemini").detect_auth()
     assert info.mode == "apikey"
     assert info.suggested_target == "https://generativelanguage.googleapis.com"
+
+
+def test_grok_auth_uses_api_target_for_api_key(fake_home: Path, monkeypatch):
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    info = clients.get("grok").detect_auth()
+    assert info.mode == "apikey"
+    assert info.suggested_target == "https://api.x.ai/v1"
+
+
+def test_grok_auth_uses_session_target_for_stored_login(fake_home: Path):
+    auth = fake_home / ".grok" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text('{"https://accounts.x.ai/sign-in": {"key": "token"}}', encoding="utf-8")
+    info = clients.get("grok").detect_auth()
+    assert info.mode == "oauth"
+    assert info.suggested_target == "https://cli-chat-proxy.grok.com/v1"
 
 
 def test_opencode_credentials_file_detected(fake_home: Path):

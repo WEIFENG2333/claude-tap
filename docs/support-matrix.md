@@ -27,6 +27,7 @@ file whenever a client, protocol, default mode, or verification status changes.
 | Codex CLI | `codex` | reverse | OpenAI | `~/.codex/config.toml`, auth default | Verified |
 | Codex App | `codexapp` | forward | Codex App | app-server inherits proxy env | Verified |
 | Gemini CLI | `gemini` | reverse | Gemini | Google base URL env vars | Verified |
+| Grok Build | `grok` | reverse | OpenAI, passthrough | Grok endpoint env/config | Prompt-export verified |
 | Antigravity CLI | `agy` | reverse | Antigravity | `CLOUD_CODE_URL` | Wired |
 | OpenClaw | `openclaw` | reverse | Anthropic, OpenAI, Gemini, passthrough | patched OpenClaw config or provider env | Prompt-export verified |
 | opencode | `opencode` | forward | Anthropic, OpenAI, Gemini, passthrough | opencode provider config | Verified |
@@ -89,6 +90,10 @@ uv run claude-tap run opencode --no-open -- run "Reply with OK"
 
 # Prompt snapshot only
 uv run claude-tap run kimi-code --export-prompt kimi-code.prompt.md --no-open -- --prompt "Reply with OK"
+
+# Grok Build via its official npm package
+npm install -g @xai-official/grok
+uv run claude-tap run grok --export-prompt grok.prompt.md --no-open -- --single "Reply with OK"
 ```
 
 For a standalone proxy, launch the proxy first and point another process at it:

@@ -13,8 +13,8 @@ For workflow / review / commit policy, see [`AGENTS.md`](AGENTS.md).
 
 A local HTTP proxy that intercepts the API traffic between an AI coding
 CLI (Claude Code, Codex CLI, Codex App, Gemini CLI, Antigravity CLI,
-Kimi CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, Oh My Pi,
-iFlow, Cursor, Qoder, Devin, Hermes — 17 built in) and the LLM upstream,
+Grok Build, Kimi CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi,
+Oh My Pi, iFlow, Cursor, Qoder, Devin, Hermes — 18 built in) and the LLM upstream,
 captures every request/response (SSE streams reassembled, WebSocket
 frames decoded), and renders the trace as a single self-contained HTML
 file you can share.
@@ -210,6 +210,7 @@ Verified against each CLI's actual source code. Used by
 | codexapp  | app-server inherits `HTTPS_PROXY`; no reverse-mode config source |
 | gemini    | `GOOGLE_GEMINI_BASE_URL` / `GOOGLE_VERTEX_BASE_URL` / `CODE_ASSIST_ENDPOINT` env |
 | agy       | `CLOUD_CODE_URL` env |
+| grok      | `GROK_XAI_API_BASE_URL` / `GROK_CLI_CHAT_PROXY_BASE_URL` env, then matching keys under `~/.grok/config.toml` → `endpoints` |
 | opencode  | `~/.config/opencode/opencode.json` → `provider.<active>.options.baseURL` (active = first part of `model: <provider>/<id>`) |
 | pi        | `~/.pi/agent/models.json` → `providers.<defaultProvider>.baseUrl` |
 | omp       | `~/.omp/agent/models.json` → `providers.<defaultProvider>.baseUrl` |

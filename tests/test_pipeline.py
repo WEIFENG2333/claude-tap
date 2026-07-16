@@ -15,6 +15,8 @@ from claude_tap.pipeline import (
     build_http_record,
     build_upstream_url,
     build_ws_record,
+    capture_only_response,
+    capture_only_stream_response,
     filter_headers,
     maybe_decompress,
     parse_json_body,
@@ -122,6 +124,31 @@ def test_reassemble_event_stream_body_openai_responses():
     assert snapshot["id"] == "resp_1"
     assert snapshot["usage"]["input_tokens"] == 3
     assert snapshot["output"][0]["name"] == "Read"
+
+
+def test_capture_only_openai_models_returns_grok_compatible_catalog():
+    response = capture_only_response(OPENAI, "/v1/models", None)
+    assert response["object"] == "list"
+    assert response["data"][0]["id"] == "grok-build"
+    assert response["data"][0]["apiBackend"] == "responses"
+    assert response["data"][0]["_meta"]["agentType"] == "grok-build"
+
+
+def test_capture_only_stream_response_returns_responses_api_events():
+    response = capture_only_stream_response(OPENAI, "/v1/responses", {"model": "grok-build"})
+
+    assert response is not None
+    body, events, raw = response
+    assert body["status"] == "completed"
+    assert body["output"][0]["content"][0]["annotations"] == []
+    assert body["usage"]["input_tokens_details"]["cached_tokens"] == 0
+    assert body["usage"]["output_tokens_details"]["reasoning_tokens"] == 0
+    assert [event["data"]["type"] for event in events] == [
+        "response.created",
+        "response.output_text.delta",
+        "response.completed",
+    ]
+    assert b'"type":"response.completed"' in raw
 
 
 # --- build_record ----------------------------------------------------------

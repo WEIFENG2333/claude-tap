@@ -409,6 +409,86 @@ def _gemini_auth() -> AuthInfo:
 
 
 # ---------------------------------------------------------------------------
+# Grok Build — official Rust CLI. API-key mode honors the xAI API endpoint
+# env var, while auxiliary CLI service requests use a separate base URL.
+# ---------------------------------------------------------------------------
+
+_GROK_API_TARGET = "https://api.x.ai/v1"
+_GROK_SESSION_TARGET = "https://cli-chat-proxy.grok.com/v1"
+
+
+def _grok_env(proxy_url: str) -> dict[str, str]:
+    base_url = f"{proxy_url}/v1"
+    return {
+        "GROK_CLI_CHAT_PROXY_BASE_URL": base_url,
+        "GROK_XAI_API_BASE_URL": base_url,
+        "GROK_DISABLE_AUTOUPDATER": "1",
+    }
+
+
+def _grok_home(env: Mapping[str, str]) -> Path:
+    custom = env.get("GROK_HOME")
+    if custom:
+        return Path(custom).expanduser()
+    return Path.home() / ".grok"
+
+
+def _grok_configured(env: Mapping[str, str]) -> str | None:
+    api_key_mode = bool(env.get("XAI_API_KEY") or env.get("GROK_CODE_XAI_API_KEY"))
+    env_vars = (
+        ("GROK_XAI_API_BASE_URL", "GROK_CLI_CHAT_PROXY_BASE_URL")
+        if api_key_mode
+        else ("GROK_CLI_CHAT_PROXY_BASE_URL", "GROK_XAI_API_BASE_URL")
+    )
+    for var in env_vars:
+        url = _strip_url(env.get(var))
+        if url:
+            return url
+    cfg = _read_toml(_grok_home(env) / "config.toml")
+    if not cfg:
+        return None
+    endpoints = cfg.get("endpoints")
+    if not isinstance(endpoints, dict):
+        return None
+    config_keys = (
+        ("xai_api_base_url", "cli_chat_proxy_base_url")
+        if api_key_mode
+        else ("cli_chat_proxy_base_url", "xai_api_base_url")
+    )
+    for key in config_keys:
+        url = _strip_url(endpoints.get(key))
+        if url:
+            return url
+    return None
+
+
+def _grok_auth() -> AuthInfo:
+    for var in ("XAI_API_KEY", "GROK_CODE_XAI_API_KEY"):
+        if os.environ.get(var):
+            return AuthInfo(
+                logged_in=True,
+                mode="apikey",
+                detail=f"{var} env var",
+                suggested_target=_GROK_API_TARGET,
+            )
+    auth = _read_json(_grok_home(os.environ) / "auth.json")
+    if auth:
+        mode = "apikey" if "xai::api_key" in auth else "oauth"
+        return AuthInfo(
+            logged_in=True,
+            mode=mode,
+            detail="Grok stored credentials",
+            suggested_target=_GROK_API_TARGET if mode == "apikey" else _GROK_SESSION_TARGET,
+        )
+    return AuthInfo(
+        logged_in=False,
+        mode="unknown",
+        detail="not logged in (run `grok login`, or export XAI_API_KEY)",
+        suggested_target=_GROK_SESSION_TARGET,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Antigravity CLI — Google Code Assist internal API. The model request uses
 # a Gemini-shaped body nested under ``request``.
 # ---------------------------------------------------------------------------
@@ -1280,6 +1360,19 @@ GEMINI_CLI = Client(
 )
 
 
+GROK = Client(
+    name="grok",
+    cmd="grok",
+    label="Grok Build",
+    install_url="https://github.com/xai-org/grok-build",
+    protocols=(OPENAI, PASSTHROUGH),
+    env_overrides=_grok_env,
+    read_configured_upstream=_grok_configured,
+    detect_auth=_grok_auth,
+    yolo_args=("--always-approve",),
+)
+
+
 ANTIGRAVITY_CLI = Client(
     name="agy",
     cmd="agy",
@@ -1484,6 +1577,7 @@ _REGISTRY: dict[str, Client] = {
         CODEX,
         CODEX_APP_CLIENT,
         GEMINI_CLI,
+        GROK,
         OPENCODE,
         PI,
         OMP,

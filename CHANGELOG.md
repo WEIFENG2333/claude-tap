@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Engineering practice and compounding-engineering documentation for agent workflows.
 - Built-in client definitions for Antigravity CLI, Kimi Code, MiMo Code,
   Oh My Pi, OpenClaw, Hermes Agent, Kimi CLI, Pi, opencode, iFlow, Cursor,
-  Qoder, Devin, and Codex App.
+  Qoder, Devin, Codex App, and Grok Build.
 - Capture-only prompt export support for OpenAI chat-completions streaming
-  clients and Antigravity/Codex App-shaped request bodies.
+  clients, OpenAI Responses streaming clients, model discovery, and
+  Antigravity/Codex App-shaped request bodies.
 
 ### Changed
 - CI and test hardening for real proxy/E2E scenarios and Python 3.13 certificate validation.

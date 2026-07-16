@@ -6,11 +6,10 @@
 
 Trace what AI coding CLIs actually send to their model APIs.
 
-`claude-tap` runs tools like Claude Code, Codex CLI, Gemini CLI,
-Antigravity CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, and Oh My
-Pi through a local proxy. It records requests, streaming responses, tools,
-token usage, and system prompts, then renders the run as a self-contained
-HTML trace.
+`claude-tap` runs tools like Claude Code, Codex CLI, Gemini CLI, Grok Build,
+Antigravity CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, and Oh My Pi
+through a local proxy. It records requests, streaming responses, tools, token
+usage, and system prompts, then renders the run as a self-contained HTML trace.
 
 Use it when you want to answer questions like:
 
@@ -61,6 +60,7 @@ Prefix the AI CLI command with `claude-tap`:
 claude-tap claude -- -p "What is 2+2?"
 claude-tap codex -- exec "Say hi"
 claude-tap gemini -- -p "Explain async/await"
+claude-tap grok -- --single "Explain async/await"
 claude-tap kimi-code -- --prompt "Say hi"
 ```
 
@@ -95,6 +95,7 @@ For prompt-history tools, you usually do not need the whole viewer. Use
 claude-tap run claude --export-prompt claude.prompt.md --no-open -- -p hi
 claude-tap run codex --export-prompt codex.prompt.md --no-open -- exec "hi"
 claude-tap run gemini --export-prompt gemini.prompt.md --no-open -- -p hi
+claude-tap run grok --export-prompt grok.prompt.md --no-open -- --single hi
 claude-tap run kimi-code --export-prompt kimi-code.prompt.md --no-open -- --prompt hi
 claude-tap run omp --export-prompt omp.prompt.md --no-open -- --print --mode text --no-session hi
 ```
@@ -127,6 +128,7 @@ CLIs; it does not install those CLIs for you.
 | Codex CLI | `claude-tap codex` | reverse | verified |
 | Codex App | `claude-tap codexapp` | forward | verified |
 | Gemini CLI | `claude-tap gemini` | reverse | verified |
+| Grok Build | `claude-tap grok` | reverse | prompt-export verified |
 | Antigravity CLI | `claude-tap agy` | reverse | wired |
 | Kimi Code | `claude-tap kimi-code` | forward | prompt-export verified |
 | MiMo Code | `claude-tap mimo` | forward | prompt-export verified |
@@ -155,7 +157,7 @@ It uses two interception modes:
 
 | Mode | Used for | How |
 | --- | --- | --- |
-| reverse | Claude Code, Codex, Gemini, Antigravity, OpenClaw, Cursor, Qoder | set a base URL, CLI flag, or temporary child config so the CLI calls `127.0.0.1` |
+| reverse | Claude Code, Codex, Gemini, Grok Build, Antigravity, OpenClaw, Cursor, Qoder | set a base URL, CLI flag, or temporary child config so the CLI calls `127.0.0.1` |
 | forward | Codex App, opencode, Kimi, Kimi Code, MiMo, Pi, Oh My Pi, Hermes, iFlow, Devin | set `HTTPS_PROXY` and use a local CA to intercept HTTPS |
 
 In both modes, `claude-tap` tries to preserve your real upstream. If your CLI

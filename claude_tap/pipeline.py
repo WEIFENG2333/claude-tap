@@ -116,6 +116,20 @@ def reassemble_event_stream_body(protocol: Protocol, body: bytes) -> tuple[objec
 
 def capture_only_response(protocol: Protocol, path: str, req_body: object) -> dict:
     model = req_body.get("model", "claude-tap-capture") if isinstance(req_body, dict) else "claude-tap-capture"
+    if protocol.name == "openai" and path.split("?", 1)[0].rstrip("/").endswith("/models"):
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": "grok-build",
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "claude-tap",
+                    "apiBackend": "responses",
+                    "_meta": {"agentType": "grok-build"},
+                }
+            ],
+        }
     if protocol.name == "anthropic":
         return {
             "id": "msg_claude_tap_capture",
@@ -158,10 +172,16 @@ def capture_only_response(protocol: Protocol, path: str, req_body: object) -> di
                 "id": "msg_claude_tap_capture",
                 "status": "completed",
                 "role": "assistant",
-                "content": [{"type": "output_text", "text": "captured"}],
+                "content": [{"type": "output_text", "text": "captured", "annotations": []}],
             }
         ],
-        "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "input_tokens_details": {"cached_tokens": 0},
+            "output_tokens_details": {"reasoning_tokens": 0},
+        },
     }
 
 
@@ -190,6 +210,24 @@ def capture_only_stream_response(
             "[DONE]",
         ]
         events = [{"event": "message", "data": chunk} for chunk in chunks]
+        return resp_body, events, _sse_bytes(events)
+    if protocol.name == "openai" and path.split("?", 1)[0].rstrip("/").endswith("/responses"):
+        in_progress = {**resp_body, "status": "in_progress", "output": []}
+        events = [
+            {"event": "message", "data": {"type": "response.created", "sequence_number": 0, "response": in_progress}},
+            {
+                "event": "message",
+                "data": {
+                    "type": "response.output_text.delta",
+                    "sequence_number": 1,
+                    "item_id": "msg_claude_tap_capture",
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": "captured",
+                },
+            },
+            {"event": "message", "data": {"type": "response.completed", "sequence_number": 2, "response": resp_body}},
+        ]
         return resp_body, events, _sse_bytes(events)
     return None
 

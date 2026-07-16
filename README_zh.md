@@ -4,10 +4,10 @@
 
 追踪 AI 编程 CLI 实际发给模型 API 的内容。
 
-`claude-tap` 会把 Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、
-Kimi Code、MiMo Code、OpenClaw、opencode、Pi、Oh My Pi 等工具放到本地代理后面运行，
-记录请求、流式响应、工具列表、token 用量和 system prompt，并生成一个可以直接打开的
-HTML trace。
+`claude-tap` 会把 Claude Code、Codex CLI、Gemini CLI、Grok Build、
+Antigravity CLI、Kimi Code、MiMo Code、OpenClaw、opencode、Pi、Oh My Pi 等工具
+放到本地代理后面运行，记录请求、流式响应、工具列表、token 用量和 system prompt，
+并生成一个可以直接打开的 HTML trace。
 
 适合用来回答这些问题：
 
@@ -56,6 +56,7 @@ uv tool upgrade claude-tap
 claude-tap claude -- -p "What is 2+2?"
 claude-tap codex -- exec "Say hi"
 claude-tap gemini -- -p "Explain async/await"
+claude-tap grok -- --single "Explain async/await"
 claude-tap kimi-code -- --prompt "Say hi"
 ```
 
@@ -89,6 +90,7 @@ claude-tap -L claude -- -p "Explain async/await"
 claude-tap run claude --export-prompt claude.prompt.md --no-open -- -p hi
 claude-tap run codex --export-prompt codex.prompt.md --no-open -- exec "hi"
 claude-tap run gemini --export-prompt gemini.prompt.md --no-open -- -p hi
+claude-tap run grok --export-prompt grok.prompt.md --no-open -- --single hi
 claude-tap run kimi-code --export-prompt kimi-code.prompt.md --no-open -- --prompt hi
 claude-tap run omp --export-prompt omp.prompt.md --no-open -- --print --mode text --no-session hi
 ```
@@ -118,6 +120,7 @@ claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format prompt-md -o 
 | Codex CLI | `claude-tap codex` | reverse | verified |
 | Codex App | `claude-tap codexapp` | forward | verified |
 | Gemini CLI | `claude-tap gemini` | reverse | verified |
+| Grok Build | `claude-tap grok` | reverse | prompt-export verified |
 | Antigravity CLI | `claude-tap agy` | reverse | wired |
 | Kimi Code | `claude-tap kimi-code` | forward | prompt-export verified |
 | MiMo Code | `claude-tap mimo` | forward | prompt-export verified |
@@ -144,7 +147,7 @@ capture-only 模式下发出过包含 prompt 的请求。`wired` 表示代码路
 
 | 模式 | 用于 | 做法 |
 | --- | --- | --- |
-| reverse | Claude Code、Codex、Gemini、Antigravity、OpenClaw、Cursor、Qoder | 设置 base URL、CLI 参数或临时子进程配置，让 CLI 请求 `127.0.0.1` |
+| reverse | Claude Code、Codex、Gemini、Grok Build、Antigravity、OpenClaw、Cursor、Qoder | 设置 base URL、CLI 参数或临时子进程配置，让 CLI 请求 `127.0.0.1` |
 | forward | Codex App、opencode、Kimi、Kimi Code、MiMo、Pi、Oh My Pi、Hermes、iFlow、Devin | 设置 `HTTPS_PROXY`，并用本地 CA 拦截 HTTPS |
 
 两种模式都会尽量保留你原本配置的真实 upstream。如果你的 CLI 本来就走私有 relay 或区域 endpoint，
