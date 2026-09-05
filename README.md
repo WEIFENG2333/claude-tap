@@ -114,6 +114,11 @@ capture even if the child CLI exits non-zero after the request is captured.
 This is useful for automation that only cares about the prompt, such as
 versioned prompt archives.
 
+Capture-only responses use the client's wire protocol, including the CloudCode
+response envelope for Antigravity. CloudCode requests marked
+`requestType: "checkpoint"` remain in the raw trace but are excluded from prompt
+snapshots. If only checkpoint requests were captured, prompt export fails.
+
 You can also export a prompt snapshot from an existing trace:
 
 ```bash

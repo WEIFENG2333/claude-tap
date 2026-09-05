@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from claude_tap.prompt_snapshot import infer_provider, render_prompt_markdown, snapshot_from_records
 
 
@@ -302,6 +304,42 @@ def test_provider_inference_can_fall_back_to_body_shape():
     assert infer_provider(_record("/custom", {"system_instruction": {}, "contents": []})) == "gemini"
     assert infer_provider(_record("/custom", {"systemInstruction": {}, "contents": []})) == "gemini"
     assert infer_provider(_record("/v1internal:streamGenerateContent", {"request": {"contents": []}})) == "gemini"
+
+
+def test_antigravity_snapshot_rejects_checkpoint_only_trace():
+    record = _record(
+        "/v1internal:streamGenerateContent?alt=sse",
+        {"requestType": "checkpoint", "request": {"systemInstruction": {"parts": [{"text": "auxiliary"}]}}},
+    )
+    original = json.dumps(record)
+
+    with pytest.raises(ValueError, match="no prompt-bearing request"):
+        snapshot_from_records([record])
+
+    assert json.dumps(record) == original
+
+
+def test_antigravity_snapshot_skips_checkpoint_even_with_higher_score():
+    checkpoint = _record(
+        "/v1internal:streamGenerateContent?alt=sse",
+        {
+            "requestType": "checkpoint",
+            "request": {
+                "systemInstruction": {"parts": [{"text": "auxiliary"}]},
+                "tools": [{"functionDeclarations": [{"name": "helper"}]}],
+            },
+        },
+    )
+    agent = _record(
+        "/v1internal:streamGenerateContent?alt=sse",
+        {"requestType": "agent", "request": {"systemInstruction": {"parts": [{"text": "main prompt"}]}}},
+        turn=2,
+    )
+
+    snapshot = snapshot_from_records([checkpoint, agent])
+
+    assert snapshot.turn == 2
+    assert snapshot.system_prompt == "main prompt"
 
 
 def test_prompt_markdown_is_comparison_oriented_and_includes_raw_schema():

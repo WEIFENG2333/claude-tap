@@ -55,6 +55,8 @@ def snapshot_from_records(records: list[dict[str, Any]]) -> PromptSnapshot:
         provider = infer_provider(record)
         if provider == "unknown":
             continue
+        if provider == "gemini" and _outer_request_body(record).get("requestType") == "checkpoint":
+            continue
         candidates.append((_score_record(record, provider), record))
 
     if not candidates:

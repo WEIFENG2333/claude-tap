@@ -5,6 +5,7 @@ decompression, JSON parsing, record construction, upstream URL building.
 from __future__ import annotations
 
 import gzip
+import json
 import zlib
 
 import pytest
@@ -22,7 +23,7 @@ from claude_tap.pipeline import (
     parse_json_body,
     reassemble_event_stream_body,
 )
-from claude_tap.protocols import ANTHROPIC, GEMINI, OPENAI
+from claude_tap.protocols import ANTHROPIC, ANTIGRAVITY, GEMINI, OPENAI
 
 # --- build_upstream_url (delegates to protocol.rewrite_upstream_path) -----
 
@@ -182,6 +183,24 @@ def test_capture_only_stream_response_returns_gemini_event():
     assert body["candidates"][0]["content"]["parts"][0]["text"] == "captured"
     assert events == [{"event": "message", "data": body}]
     assert raw.startswith(b"data: {")
+
+
+def test_capture_only_antigravity_response_wraps_gemini_body():
+    response = capture_only_response(ANTIGRAVITY, "/v1internal:generateContent", {"request": {}})
+
+    assert response["traceId"] == "claude-tap-capture"
+    assert response["response"] == capture_only_response(GEMINI, "/v1beta/models/gemini:generateContent", {})
+    assert response["response"]["candidates"][0]["finishReason"] == "STOP"
+
+
+def test_capture_only_antigravity_stream_uses_cloudcode_envelope():
+    response = capture_only_stream_response(ANTIGRAVITY, "/v1internal:streamGenerateContent?alt=sse", {"request": {}})
+
+    assert response is not None
+    body, events, raw = response
+    assert body["response"]["candidates"][0]["content"]["parts"][0]["text"] == "captured"
+    assert events == [{"event": "message", "data": body}]
+    assert json.loads(raw.removeprefix(b"data: ").strip()) == body
 
 
 # --- build_record ----------------------------------------------------------

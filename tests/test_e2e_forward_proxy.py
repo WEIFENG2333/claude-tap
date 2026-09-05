@@ -349,6 +349,50 @@ async def test_forward_proxy_capture_only_stubs_antigravity_bootstrap_without_re
     assert jsonl_path.read_text(encoding="utf-8").strip() == ""
 
 
+async def test_forward_proxy_capture_only_wraps_cloudcode_stream(trace_dir: Path):
+    cert_path, key_path = ensure_ca()
+    ca = CertificateAuthority(cert_path, key_path)
+
+    class FailingSession:
+        async def request(self, *args, **kwargs):
+            raise AssertionError("capture-only must not call upstream")
+
+    bus = EventBus()
+    jsonl_path = trace_dir / "trace.jsonl"
+    bus.subscribe(JsonlSink(jsonl_path))
+    ctx = ProxyContext(
+        protocols=(ANTIGRAVITY,),
+        target="https://daily-cloudcode-pa.googleapis.com",
+        bus=bus,
+        session=FailingSession(),  # type: ignore[arg-type]
+        capture_only=True,
+    )
+    proxy, proxy_port = await _start_proxy(ctx, ca)
+    request_body = {
+        "requestType": "checkpoint",
+        "request": {"systemInstruction": {"parts": [{"text": "auxiliary prompt"}]}},
+    }
+
+    try:
+        client_ssl = ssl.create_default_context(cafile=str(cert_path))
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=client_ssl)) as client:
+            async with client.post(
+                "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+                json=request_body,
+                proxy=f"http://127.0.0.1:{proxy_port}",
+            ) as resp:
+                assert resp.status == 200
+                data = json.loads((await resp.text()).removeprefix("data: ").strip())
+                assert data["response"]["candidates"][0]["content"]["parts"][0]["text"] == "captured"
+    finally:
+        await proxy.stop()
+        await bus.close_all()
+
+    record = json.loads(jsonl_path.read_text(encoding="utf-8"))
+    assert record["request"]["body"] == request_body
+    assert record["response"]["body"] == data
+
+
 async def test_forward_proxy_capture_only_streams_chat_completions(trace_dir: Path):
     cert_path, key_path = ensure_ca()
     ca = CertificateAuthority(cert_path, key_path)
