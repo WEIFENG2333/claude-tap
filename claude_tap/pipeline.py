@@ -141,7 +141,7 @@ def capture_only_response(protocol: Protocol, path: str, req_body: object) -> di
             "usage": {"input_tokens": 0, "output_tokens": 0},
         }
     if protocol.name in ("gemini", "antigravity"):
-        return {
+        response = {
             "candidates": [
                 {
                     "content": {"role": "model", "parts": [{"text": "captured"}]},
@@ -151,6 +151,9 @@ def capture_only_response(protocol: Protocol, path: str, req_body: object) -> di
             ],
             "usageMetadata": {"promptTokenCount": 0, "candidatesTokenCount": 0, "totalTokenCount": 0},
         }
+        if protocol.name == "antigravity":
+            return {"response": response, "traceId": "claude-tap-capture"}
+        return response
     if protocol.name == "openai" and "chat/completions" in path:
         return {
             "id": "chatcmpl_claude_tap_capture",

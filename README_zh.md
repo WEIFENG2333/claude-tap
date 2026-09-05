@@ -107,6 +107,10 @@ claude-tap run openclaw --export-prompt openclaw.prompt.md --no-open -- agent --
 prompt 导出成功后，即使子进程后面以非 0 状态退出，`claude-tap` 也会把这次运行视为成功捕获。
 这对只关心 prompt 的自动化任务很有用，例如按版本归档 prompt。
 
+只捕获模式返回符合客户端协议的占位响应，包括 Antigravity 所需的 CloudCode 响应外层。
+标记为 `requestType: "checkpoint"` 的 CloudCode 请求仍保留在原始 trace 中，但不会作为
+prompt 快照候选。如果只捕获到了 checkpoint 请求，prompt 导出会失败。
+
 也可以从已有 trace 里导出 prompt：
 
 ```bash

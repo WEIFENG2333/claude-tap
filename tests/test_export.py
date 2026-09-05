@@ -43,3 +43,29 @@ def test_export_html_writes_self_contained(tmp_path: Path, sample_jsonl: Path):
     assert rc == 0
     html = out.read_text(encoding="utf-8")
     assert "EMBEDDED_TRACE_DATA" in html
+
+
+def test_export_prompt_rejects_checkpoint_only_trace(tmp_path: Path, capsys):
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(
+        json.dumps(
+            {
+                "request": {
+                    "path": "/v1internal:streamGenerateContent?alt=sse",
+                    "body": {
+                        "requestType": "checkpoint",
+                        "request": {"systemInstruction": {"parts": [{"text": "auxiliary prompt"}]}},
+                    },
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    original = trace.read_bytes()
+    output = tmp_path / "prompt.md"
+
+    assert export(trace, output=output, fmt="prompt-md") == 1
+    assert "no prompt-bearing request" in capsys.readouterr().err
+    assert not output.exists()
+    assert trace.read_bytes() == original
