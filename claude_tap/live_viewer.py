@@ -4,16 +4,15 @@ API surface (everything under ``/api/``, JSON unless noted):
 
     GET /                                  -> HTML viewer with LIVE_MODE = true
     GET /api/version                       -> {"server": str, "schema": int}
-    GET /api/sessions                      -> {"current": str|null, "sessions": [...]}
-    GET /api/sessions/{date}/{hhmmss}      -> {"id": str, "records": [...]}
+    GET /api/captures                      -> {"current": str|null, "captures": [...]}
+    GET /api/captures/{date}/{id}/index    -> metadata + logical sessions
+    GET /api/captures/{date}/{id}/records/{index} -> one full record
     GET /api/stream                        -> SSE: hello | record | heartbeat
 
-Session ids are ``"YYYY-MM-DD/HHMMSS"`` and map 1:1 to ``trace_<HHMMSS>.jsonl``
-under the date directory. Records are read from disk on demand — the server
-does not keep an in-memory window. The SSE stream only carries new records
-for the *current* session (the live one). The browser fetches the baseline
-through ``/api/sessions/{id}`` before opening the stream, so there is no
-replay logic on the server side.
+Capture ids are ``"YYYY-MM-DD/HHMMSS"`` and map 1:1 to JSONL files. Logical
+sessions are derived from normalized request identity and can coexist inside
+one capture. The browser receives only metadata up front and fetches a full
+record by byte offset when it is selected.
 """
 
 from __future__ import annotations
@@ -27,23 +26,26 @@ from pathlib import Path
 
 from aiohttp import web
 
+from claude_tap import manifest as manifest_mod
 from claude_tap._version import __version__
-from claude_tap.viewer import INJECT_MARKER
+from claude_tap.catalog import TraceCatalog, summarize_sessions
+from claude_tap.viewer import INJECT_MARKER, extract_metadata, load_viewer_template
 
 # Bumped when an incompatible change is made to the JSON shape exchanged with
 # the viewer. The browser uses this to detect a stale embedded copy.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TRACE_FILE_RE = re.compile(r"^trace_(\d{6})\.jsonl$")
+_NO_STORE_HEADERS = {"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"}
 
 
 @dataclass(frozen=True)
-class _SessionInfo:
+class _CaptureInfo:
     id: str
     date: str
     started_at: str
-    record_count: int
+    record_count: int | None
 
 
 class LiveViewerServer:
@@ -65,6 +67,9 @@ class LiveViewerServer:
         self._runner: web.AppRunner | None = None
         self._actual_port = 0
         self._shutdown = asyncio.Event()
+        self._catalog = TraceCatalog()
+        self._catalog_lock = asyncio.Lock()
+        self._live_record_index: int | None = None
 
     # ------------------------------------------------------------------
     # Public surface
@@ -75,15 +80,29 @@ class LiveViewerServer:
         return f"http://{self.host}:{self._actual_port}"
 
     @property
-    def current_session_id(self) -> str | None:
+    def current_capture_id(self) -> str | None:
         if self._current_jsonl is None:
             return None
         return self._jsonl_to_session_id(self._current_jsonl)
 
+    @property
+    def current_session_id(self) -> str | None:
+        """Backward-compatible alias for the pre-v2 capture terminology."""
+
+        return self.current_capture_id
+
     async def start(self) -> int:
+        self._live_record_index = self._current_record_count()
         app = web.Application()
         app.router.add_get("/", self._handle_index)
         app.router.add_get("/api/version", self._handle_version)
+        app.router.add_get("/api/captures", self._handle_captures)
+        app.router.add_get("/api/captures/{date}/{hhmmss}/index", self._handle_capture_index)
+        app.router.add_get(
+            "/api/captures/{date}/{hhmmss}/records/{record_index}",
+            self._handle_capture_record,
+        )
+        # Pre-v2 aliases remain available for saved viewers.
         app.router.add_get("/api/sessions", self._handle_sessions)
         app.router.add_get("/api/sessions/{date}/{hhmmss}", self._handle_session_records)
         app.router.add_get("/api/stream", self._handle_stream)
@@ -110,7 +129,22 @@ class LiveViewerServer:
 
     async def broadcast(self, record: dict) -> None:
         """Push a record to every connected SSE client."""
-        msg = ("event: record\ndata: " + json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode(
+        capture_id = self.current_capture_id or "live"
+        metadata = extract_metadata(
+            json.dumps(record, ensure_ascii=False, separators=(",", ":")), capture_id=capture_id
+        ) or {"capture_id": capture_id}
+        if self._live_record_index is None:
+            self._live_record_index = self._current_record_count()
+        metadata["record_index"] = self._live_record_index
+        self._live_record_index += 1
+        event = {
+            "schema": SCHEMA_VERSION,
+            "type": "record.appended",
+            "capture_id": capture_id,
+            "metadata": metadata,
+            "record": record,
+        }
+        msg = ("event: record\ndata: " + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode(
             "utf-8"
         )
         dropped: list[web.StreamResponse] = []
@@ -156,36 +190,102 @@ class LiveViewerServer:
     # ------------------------------------------------------------------
 
     async def _handle_index(self, request: web.Request) -> web.Response:
-        template_path = Path(__file__).parent / "viewer.html"
-        if not template_path.exists():
+        html = load_viewer_template()
+        if not html:
             return web.Response(status=404, text="viewer.html not found")
-        html = template_path.read_text(encoding="utf-8")
-        sid = self.current_session_id
+        capture_id = self.current_capture_id
         inject = (
             "<script>\n"
             "const LIVE_MODE = true;\n"
             f"const LIVE_SCHEMA = {SCHEMA_VERSION};\n"
-            f"const CURRENT_SESSION_ID = {json.dumps(sid)};\n"
+            f"const CURRENT_CAPTURE_ID = {json.dumps(capture_id)};\n"
+            f"const CURRENT_SESSION_ID = {json.dumps(capture_id)};\n"
             f"const __CLAUDE_TAP_VERSION__ = {json.dumps(__version__)};\n"
             "</script>"
         )
         html = html.replace(INJECT_MARKER, inject + "\n" + INJECT_MARKER, 1)
-        return web.Response(text=html, content_type="text/html")
+        return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-store"})
 
     async def _handle_version(self, request: web.Request) -> web.Response:
         return web.json_response(
             {"server": __version__, "schema": SCHEMA_VERSION},
-            headers={"Access-Control-Allow-Origin": "*"},
+            headers=_NO_STORE_HEADERS,
         )
 
     async def _handle_sessions(self, request: web.Request) -> web.Response:
-        sessions = list(self._enumerate_sessions())
+        captures = list(self._enumerate_captures())
         return web.json_response(
             {
-                "current": self.current_session_id,
-                "sessions": [s.__dict__ for s in sessions],
+                "current": self.current_capture_id,
+                "sessions": [capture.__dict__ for capture in captures],
             },
-            headers={"Access-Control-Allow-Origin": "*"},
+            headers=_NO_STORE_HEADERS,
+        )
+
+    async def _handle_captures(self, request: web.Request) -> web.Response:
+        captures = list(self._enumerate_captures())
+        return web.json_response(
+            {
+                "schema": SCHEMA_VERSION,
+                "current": self.current_capture_id,
+                "captures": [capture.__dict__ for capture in captures],
+            },
+            headers=_NO_STORE_HEADERS,
+        )
+
+    async def _handle_capture_index(self, request: web.Request) -> web.Response:
+        date = request.match_info["date"]
+        hhmmss = request.match_info["hhmmss"]
+        path = self._session_id_to_path(date, hhmmss)
+        if path is None:
+            return web.Response(status=404, text="capture not found")
+        capture_id = f"{date}/{hhmmss}"
+        try:
+            async with self._catalog_lock:
+                indexed = await asyncio.to_thread(self._catalog.index, path, capture_id)
+        except OSError as exc:
+            return web.Response(status=500, text=str(exc))
+        return web.json_response(
+            {
+                "schema": SCHEMA_VERSION,
+                "capture": {
+                    "id": capture_id,
+                    "record_count": len(indexed.metadata),
+                    "size_bytes": indexed.file_size,
+                    "is_live": capture_id == self.current_capture_id,
+                },
+                "sessions": summarize_sessions(indexed.metadata),
+                "metadata": indexed.metadata,
+            },
+            headers=_NO_STORE_HEADERS,
+        )
+
+    async def _handle_capture_record(self, request: web.Request) -> web.Response:
+        date = request.match_info["date"]
+        hhmmss = request.match_info["hhmmss"]
+        path = self._session_id_to_path(date, hhmmss)
+        if path is None:
+            return web.Response(status=404, text="capture not found")
+        try:
+            record_index = int(request.match_info["record_index"])
+        except ValueError:
+            return web.Response(status=404, text="record not found")
+        capture_id = f"{date}/{hhmmss}"
+        try:
+            async with self._catalog_lock:
+                record = await asyncio.to_thread(self._catalog.read_record, path, capture_id, record_index)
+        except OSError as exc:
+            return web.Response(status=500, text=str(exc))
+        if record is None:
+            return web.Response(status=404, text="record not found")
+        return web.json_response(
+            {
+                "schema": SCHEMA_VERSION,
+                "capture_id": capture_id,
+                "record_index": record_index,
+                "record": record,
+            },
+            headers=_NO_STORE_HEADERS,
         )
 
     async def _handle_session_records(self, request: web.Request) -> web.Response:
@@ -209,7 +309,7 @@ class LiveViewerServer:
             return web.Response(status=500, text=str(exc))
         return web.json_response(
             {"id": f"{date}/{hhmmss}", "records": records},
-            headers={"Access-Control-Allow-Origin": "*"},
+            headers=_NO_STORE_HEADERS,
         )
 
     async def _handle_stream(self, request: web.Request) -> web.StreamResponse:
@@ -229,7 +329,9 @@ class LiveViewerServer:
         # which schema version to expect, so it can detect a stale embedded
         # copy and offer a refresh.
         hello = {
-            "session": self.current_session_id,
+            "type": "stream.connected",
+            "capture": self.current_capture_id,
+            "session": self.current_capture_id,
             "schema": SCHEMA_VERSION,
             "server": __version__,
         }
@@ -262,10 +364,11 @@ class LiveViewerServer:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _enumerate_sessions(self):
-        """Yield every session under ``output_dir``, newest first."""
+    def _enumerate_captures(self):
+        """Yield every capture under ``output_dir``, newest first."""
         if not self.output_dir.is_dir():
             return
+        manifest_counts = self._manifest_record_counts()
         for date_dir in sorted(self.output_dir.iterdir(), reverse=True):
             if not date_dir.is_dir() or not _DATE_RE.match(date_dir.name):
                 continue
@@ -275,16 +378,55 @@ class LiveViewerServer:
                     continue
                 try:
                     stat = jsonl.stat()
-                    with open(jsonl, encoding="utf-8") as f:
-                        count = sum(1 for line in f if line.strip())
                 except OSError:
                     continue
-                yield _SessionInfo(
+                rel = str(jsonl.relative_to(self.output_dir))
+                count = self._catalog.cached_count(jsonl)
+                if count is None and jsonl == self._current_jsonl:
+                    count = self._live_record_index
+                if count is None:
+                    count = manifest_counts.get(rel)
+                # Preserve exact counts for small unregistered traces without
+                # making the catalog endpoint scan every large historical file.
+                if count is None and stat.st_size <= 8 * 1024 * 1024:
+                    try:
+                        with open(jsonl, "rb") as source:
+                            count = sum(1 for line in source if line.strip())
+                    except OSError:
+                        count = None
+                yield _CaptureInfo(
                     id=f"{date_dir.name}/{m.group(1)}",
                     date=date_dir.name,
                     started_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
                     record_count=count,
                 )
+
+    def _manifest_record_counts(self) -> dict[str, int]:
+        try:
+            manifest = manifest_mod.load(self.output_dir)
+        except OSError:
+            return {}
+        counts: dict[str, int] = {}
+        for entry in manifest.get("traces", []):
+            count = entry.get("record_count")
+            if not isinstance(count, int):
+                continue
+            for filename in entry.get("files", []):
+                if isinstance(filename, str) and filename.endswith(".jsonl"):
+                    counts[filename] = count
+        return counts
+
+    def _current_record_count(self) -> int:
+        if self._current_jsonl is None or not self._current_jsonl.is_file():
+            return 0
+        cached = self._catalog.cached_count(self._current_jsonl)
+        if cached is not None:
+            return cached
+        try:
+            with open(self._current_jsonl, "rb") as source:
+                return sum(1 for line in source if line.strip())
+        except OSError:
+            return 0
 
 
 class LiveSink:

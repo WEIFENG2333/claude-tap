@@ -216,7 +216,7 @@ def test_mimo_env_redirects_common_backends():
     assert env["MIMOCODE_MIMO_ONLY"] == "false"
 
 
-def test_openclaw_env_redirects_common_backends():
+def test_openclaw_env_redirects_common_backends(fake_home: Path):
     env = clients.get("openclaw").env_overrides("http://127.0.0.1:8080")
     assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8080/v1"
     assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8080"

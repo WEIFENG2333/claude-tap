@@ -22,10 +22,16 @@ def _seed_session(out: Path, hhmmss: str, *, files: list[str] | None = None) -> 
 
 
 def test_register_then_load_roundtrip(trace_dir: Path):
-    manifest.register(trace_dir, "20260101_120000", ["2026-01-01/trace_120000.jsonl"])
+    manifest.register(
+        trace_dir,
+        "20260101_120000",
+        ["2026-01-01/trace_120000.jsonl"],
+        metadata={"record_count": 7},
+    )
     loaded = manifest.load(trace_dir)
     assert loaded["traces"]
     assert loaded["traces"][-1]["timestamp"] == "20260101_120000"
+    assert loaded["traces"][-1]["record_count"] == 7
 
 
 def test_cleanup_drops_oldest_and_deletes_files(trace_dir: Path):

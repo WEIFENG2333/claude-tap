@@ -19,7 +19,10 @@ client -> reverse or forward proxy -> upstream API
 - `forward_proxy.py` handles CONNECT and TLS interception for clients that
   cannot be reliably redirected.
 - `pipeline.py` converts both transports into the same trace record format.
-- `viewer.py`, `viewer.html`, and `live_viewer.py` render saved and live traces.
+- `identity.py` normalizes vendor session, thread, agent, and turn signals.
+- `catalog.py` maintains append-friendly JSONL byte-offset and metadata indexes.
+- `viewer.py`, `viewer.html`, `viewer_assets/`, and `live_viewer.py` render saved
+  and live traces through the same self-contained frontend.
 
 A `Client` describes a product; a `Protocol` describes its upstream wire
 format. Reuse protocols across clients and keep transport code independent
@@ -28,6 +31,20 @@ from response decoding.
 Each JSONL line represents a completed HTTP or WebSocket exchange. Sensitive
 authorization headers are redacted, but request and response bodies are not.
 Treat all traces as sensitive.
+
+New records carry a schema-versioned `trace_context`. Old records are
+normalized at read time. Identity adapters must use explicit, allowlisted wire
+fields; never recursively search request bodies for `sessionId`, because tool
+payloads contain unrelated process and terminal session ids.
+
+The live viewer API distinguishes capture ids from logical session keys. Keep
+the metadata-index and single-record endpoints memory bounded. Frontend source
+files stay modular under `viewer_assets/`; `load_viewer_template()` assembles
+them into one document so exported traces remain portable.
+
+`docs/VIEWER_DESIGN.md` documents the viewer's information hierarchy,
+responsive concession rules, performance contract, and UX audit. Keep those
+contracts in sync when changing the viewer.
 
 ## Development
 

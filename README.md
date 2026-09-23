@@ -87,6 +87,61 @@ Use `-L` to open a live viewer while the CLI is still running:
 claude-tap -L claude -- -p "Explain async/await"
 ```
 
+## Session-aware Viewer
+
+The viewer separates a **capture** (one JSONL file) from a logical **session**
+(one CLI conversation). The collapsible left panel groups requests by normalized
+session identity without exposing raw ids. The center virtual list has one row
+per LLM request. Its stable two-line activity preview keeps model prose and
+direct tool calls in one predictable rhythm, with local time, model, duration,
+and compact per-request input/output usage. Routine 2xx status and aggregate
+session token totals stay out of the way. The right reading surface opens on
+Messages and renders only the message sequence from that request body: one role
+section per source item and one readable block per source content block,
+preserving raw order, provider types, tool-call ids, and tool-result ids without
+regrouping data from other requests. The System tab is one continuous prompt,
+while Tools contains only the tool definitions mounted on that request and
+formats their schemas across Anthropic, OpenAI Chat/Responses, Gemini, and Codex
+namespace shapes. Each tab uses one primary vertical reading scroller. Request,
+response, header, and full-trace JSON use a lazy folding tree with DeepSeek
+Harness-compatible hover, copy, context-menu, and keyboard behavior rather than
+whole-document truncation. Stream errors remain visible even when the HTTP
+status is 200. The wide inspector is resizable, neighboring requests prefetch in
+the background, and the viewer remembers its tab and scroll position when
+folded or switched. On mobile, sessions become a drawer and request details
+become a full-screen reading surface.
+
+Thread, sub-agent, and turn identifiers are retained as optional hierarchy when
+the client sends them; they are not required for grouping and remain available
+in the raw request data.
+
+Session adapters are based on observed wire traffic rather than a recursive
+search for any field named `sessionId`:
+
+| Client | Session signal | Optional hierarchy | Evidence |
+| --- | --- | --- | --- |
+| Claude Code | `X-Claude-Code-Session-Id` | `X-Claude-Code-Agent-Id`, `X-Claude-Code-Parent-Agent-Id` | capture-only run, 2.1.234 |
+| Codex CLI | `x-codex-turn-metadata.session_id`, then `session-id` | thread, turn, window, parent thread | capture-only run, 0.144.1 |
+| DeepSeek Harness | `X-DeepSeek-Harness-Session-Id` | — | capture-only run, 0.1.0-rc.7 |
+| Grok Build | `X-Grok-Session-Id` | agent and turn index | capture-only run, 1.0.3 |
+| Pi | `session_id` | `x-session-affinity` fallback | capture-only run, 0.72.1 |
+| Hermes Agent | `session_id` | — | capture-only run, 0.0.0 agent build |
+| opencode-compatible traffic | `X-Session-ID` | `X-Parent-Session-ID` | compatibility adapter; local bootstrap prevented a prompt capture |
+| Gemini CLI | none in the model request | — | verified absent in a 0.40.1 capture-only run |
+
+OpenAI Responses requests also use an explicit top-level `conversation` when
+present and retain `previous_response_id` only as a link, never as an invented
+session. Generic clients can use the allowlisted `x-session-id`, `session-id`,
+`session_id`, `x-conversation-id`, or top-level body equivalents. If no safe
+wire identity exists (including current Gemini CLI and older Claude Code), the
+viewer labels the group as a capture-level fallback instead of guessing.
+
+Live viewer schema v2 exposes indexed detail endpoints: it sends a metadata index
+up front, reads full records by JSONL byte offset, and emits typed
+`record.appended` events. Selected and nearby request bodies use bounded LRU
+caching with in-flight request deduplication. This keeps large traces responsive
+without loading the entire capture into browser memory.
+
 ## Export A Prompt Snapshot
 
 For prompt-history tools, you usually do not need the whole viewer. Use

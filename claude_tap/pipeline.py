@@ -20,6 +20,7 @@ from typing import Mapping
 
 import aiohttp
 
+from claude_tap.identity import extract_trace_context
 from claude_tap.protocols import Protocol, select_for_path
 from claude_tap.trace import EventBus
 
@@ -345,6 +346,7 @@ def build_http_record(
         "request_id": request_id,
         "turn": turn,
         "duration_ms": duration_ms,
+        "trace_context": extract_trace_context(req_headers, req_body, path),
         "request": {
             "method": method,
             "path": path,
@@ -419,6 +421,7 @@ def build_ws_record(
         "turn": turn,
         "duration_ms": duration_ms,
         "transport": "websocket",
+        "trace_context": extract_trace_context(req_headers, req_body, path),
         "request": {
             "method": "WEBSOCKET",
             "path": path,

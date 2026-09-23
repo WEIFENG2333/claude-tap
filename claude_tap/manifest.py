@@ -85,15 +85,16 @@ def save(output_dir: Path, manifest: dict) -> None:
     )
 
 
-def register(output_dir: Path, timestamp: str, files: list[str]) -> dict:
+def register(output_dir: Path, timestamp: str, files: list[str], *, metadata: dict | None = None) -> dict:
     manifest = load(output_dir)
-    manifest.setdefault("traces", []).append(
-        {
-            "timestamp": timestamp,
-            "files": files,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+    entry = {
+        "timestamp": timestamp,
+        "files": files,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if metadata:
+        entry.update(metadata)
+    manifest.setdefault("traces", []).append(entry)
     save(output_dir, manifest)
     return manifest
 

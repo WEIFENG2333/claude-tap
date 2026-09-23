@@ -590,7 +590,7 @@ async def _run_pipeline_async(args: argparse.Namespace, *, launch_client: bool) 
             html_path=html_path if html_path.exists() else None,
             prompt_path=prompt_path if prompt_path is not None and prompt_path.exists() else None,
         )
-        manifest_mod.register(output_dir, ts, files)
+        manifest_mod.register(output_dir, ts, files, metadata={"record_count": jsonl.count})
         if args.max_traces > 0:
             removed = manifest_mod.cleanup(output_dir, args.max_traces)
             if removed:

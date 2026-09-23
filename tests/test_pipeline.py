@@ -227,6 +227,29 @@ def test_build_http_record_basic_shape():
     assert r["response"]["status"] == 200
     assert "sse_events" not in r["response"]
     assert r["upstream_base_url"] == "https://api.anthropic.com"
+    assert r["trace_context"]["protocol"] == "anthropic"
+
+
+def test_build_http_record_normalizes_session_before_header_redaction():
+    r = build_http_record(
+        request_id="req_identity",
+        turn=1,
+        duration_ms=1,
+        method="POST",
+        path="/v1/messages",
+        req_headers={
+            "X-Claude-Code-Session-Id": "claude-session",
+            "User-Agent": "claude-cli/2.1.234 (external, sdk-cli)",
+        },
+        req_body={"model": "claude"},
+        status=200,
+        resp_headers={},
+        resp_body={},
+    )
+
+    assert r["trace_context"]["client"] == "claude-code"
+    assert r["trace_context"]["session_id"] == "claude-session"
+    assert r["request"]["headers"]["X-Claude-Code-Session-Id"] == "claude-session"
 
 
 def test_build_ws_record_extracts_response_completed():

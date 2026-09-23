@@ -82,6 +82,49 @@ CLI 退出后，会输出类似这些文件：
 claude-tap -L claude -- -p "Explain async/await"
 ```
 
+## 按 Session 组织的 Viewer
+
+新版 Viewer 会区分 **capture**（一个 JSONL 抓取文件）和逻辑 **session**（一次 CLI
+对话）。可收起的左栏按标准化 Session 身份归类，但不把原始 ID 暴露在列表里；中间每一行
+就是一次 LLM 请求。稳定的两行活动预览用一致节奏展示模型文字和直接工具调用，并保留本地
+时间、模型、耗时以及紧凑的单请求输入/输出用量；常规 2xx 状态和 Session 聚合 Token 不再
+重复占位。右侧阅读区默认打开 Messages，只渲染本次请求体里的消息序列：源数组中的每一项
+对应一个 role 区段，每个 content block 按原顺序直接展示，并保留协议类型、tool-call id 和
+tool-result id，不编号、不重组，也不跨请求配对数据。System 是一整块连续内容；Tools 只
+展示本次请求挂载的定义，并统一格式化 Anthropic、OpenAI Chat/Responses、Gemini 和 Codex
+namespace 的 Schema。
+每个标签只有一个主纵向阅读滚动区；请求、响应、请求头和完整 Trace 的 JSON 使用按分支
+懒展开的折叠树，并兼容 DeepSeek Harness 的悬浮、复制、右键菜单和键盘操作，不再整份截断。
+即使 HTTP 状态是 200，流式响应里的真实错误也会明确显示。宽版 Inspector 可以调节大小，
+相邻请求会在后台预取；折叠详情、切换请求或标签时会保留原来的标签和滚动位置。移动端会把
+会话列表变成抽屉，把请求详情变成全屏阅读区。
+
+Thread、Sub-agent、Turn 等层级在客户端提供时仍会保留，但不影响通用分组，完整信息可在
+原始请求数据中查看。
+
+Session 适配来自实际请求流量，不会递归搜索所有叫 `sessionId` 的字段：
+
+| 客户端 | Session 信号 | 可选层级 | 验证依据 |
+| --- | --- | --- | --- |
+| Claude Code | `X-Claude-Code-Session-Id` | `X-Claude-Code-Agent-Id`、`X-Claude-Code-Parent-Agent-Id` | capture-only 实测 2.1.234 |
+| Codex CLI | 优先 `x-codex-turn-metadata.session_id`，再用 `session-id` | thread、turn、window、父 thread | capture-only 实测 0.144.1 |
+| DeepSeek Harness | `X-DeepSeek-Harness-Session-Id` | — | capture-only 实测 0.1.0-rc.7 |
+| Grok Build | `X-Grok-Session-Id` | agent、turn index | capture-only 实测 1.0.3 |
+| Pi | `session_id` | `x-session-affinity` 兜底 | capture-only 实测 0.72.1 |
+| Hermes Agent | `session_id` | — | capture-only 实测 0.0.0 agent build |
+| opencode 兼容流量 | `X-Session-ID` | `X-Parent-Session-ID` | 已实现兼容；本地版本因 bootstrap 未能直接捕获 prompt |
+| Gemini CLI | 模型请求中没有 Session ID | — | capture-only 实测 0.40.1 确认缺失 |
+
+OpenAI Responses 请求存在显式顶层 `conversation` 时也会使用它；
+`previous_response_id` 只作为链路信息保存，不会伪造成 Session。通用客户端还支持白名单内的
+`x-session-id`、`session-id`、`session_id`、`x-conversation-id` 和对应顶层 body
+字段。找不到可靠身份时（例如当前 Gemini CLI 和旧版 Claude Code），页面会明确标注为
+capture 级兜底，而不是猜错分组。
+
+Live Viewer schema v2 会先返回轻量元数据索引，再按 JSONL 字节偏移读取选中的完整请求，
+并通过带类型的 `record.appended` 事件增量更新。选中项和相邻请求体使用有界 LRU 缓存，
+同时合并重复的进行中请求，因此大 trace 不再一次性灌进浏览器内存。
+
 ## 导出 Prompt 快照
 
 如果你只关心 system prompt / instructions / tools，不需要完整 viewer，可以用
