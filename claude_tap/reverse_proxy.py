@@ -64,6 +64,11 @@ def build_app(ctx: ProxyContext) -> web.Application:
 async def _dispatch(request: web.Request) -> web.StreamResponse:
     ctx: ProxyContext = request.app[CTX_KEY]
 
+    response = ctx.bootstrap_response(request.method, ctx.target.rstrip("/") + request.path_qs)
+    if response is not None:
+        status, payload = response
+        return web.json_response(payload, status=status)
+
     protocol = ctx.protocol_for(request.path)
     if protocol is None:
         log.debug("blocked non-API path: %s %s", request.method, request.path)
@@ -138,6 +143,7 @@ async def _handle_http(
             sse_events=sse_events,
             upstream_base_url=ctx.target,
         )
+        ctx.annotate_capture(record)
         await ctx.bus.publish(record)
         log.info("[Turn %d] capture-only response returned; upstream skipped", turn)
         if stream_response:

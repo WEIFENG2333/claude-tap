@@ -291,3 +291,26 @@ rules for coding agents are in [`AGENTS.md`](AGENTS.md).
 ## License
 
 [MIT](LICENSE)
+
+### Local bootstrap responses for prompt capture
+
+Some clients fetch startup settings before sending a model request. With
+`--export-prompt`, add `--bootstrap-responses bootstrap.json` to serve explicit
+local JSON responses in either forward or reverse mode:
+
+```json
+{
+  "version": 1,
+  "responses": [
+    {"method": "GET", "url": "https://api.example.com/settings", "status": 200, "body": {"settings": {}}}
+  ]
+}
+```
+
+Routes match the exact method, origin and path; query strings are ignored.
+Unmatched non-model requests return a local 404. Model requests still use
+capture-only dummy responses, even if listed in the file. Every model trace
+records the configuration and its SHA-256 in `capture_environment`. Use only
+synthetic, publishable values in this file. The caller owns product-specific
+fixtures and launch configuration. Such captures describe the simulated
+environment and do not establish availability for a production account.

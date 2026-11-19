@@ -268,3 +268,22 @@ uv run claude-tap --version
 ## License
 
 [MIT](LICENSE)
+
+### 提示词抓取的本地启动响应
+
+部分客户端在发送模型请求前会读取启动配置。在 `--export-prompt` 模式下，
+可以添加 `--bootstrap-responses bootstrap.json`，通过正向或反向代理返回指定 JSON：
+
+```json
+{
+  "version": 1,
+  "responses": [
+    {"method": "GET", "url": "https://api.example.com/settings", "status": 200, "body": {"settings": {}}}
+  ]
+}
+```
+
+按 HTTP 方法、来源和路径精确匹配，忽略查询参数。未匹配的非模型请求返回本地 404。
+模型请求仍由 capture-only 返回占位响应。每条模型抓包的 `capture_environment`
+记录完整模拟配置和 SHA-256，因此配置文件只能包含可公开的合成数据。
+产品专用的模拟配置及启动参数由调用方维护；抓包表示该模拟环境下的实际请求。

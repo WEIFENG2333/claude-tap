@@ -243,6 +243,10 @@ class ForwardProxyServer:
 
             body = await _read_request_body(reader, headers)
 
+            origin = f"https://{hostname}" + (f":{port}" if port != 443 else "")
+            if await self._bootstrap_response(method, origin + path, writer):
+                continue
+
             protocol = self._ctx.protocol_for(path)
             if protocol is None:
                 msg = b"Not Found"
@@ -255,6 +259,23 @@ class ForwardProxyServer:
             upstream_base = f"https://{hostname}:{port}"
             upstream = f"{upstream_base}{path}"
             await self._forward(method, path, headers, body, upstream, upstream_base, writer, protocol)
+
+    async def _bootstrap_response(self, method: str, url: str, writer: asyncio.StreamWriter) -> bool:
+        response = self._ctx.bootstrap_response(method, url)
+        if response is None:
+            return False
+        status, payload = response
+        data = json.dumps(payload, separators=(",", ":")).encode()
+        if status in (204, 205) or method == "HEAD":
+            data = b""
+        writer.write(
+            f"HTTP/1.1 {status} Local Response\r\nContent-Type: application/json\r\n"
+            f"Content-Length: {len(data)}\r\n\r\n".encode()
+            + data
+        )
+        await writer.drain()
+        log.debug("local bootstrap response: %s %s -> %s", method, url, status)
+        return True
 
     async def _forward(
         self,
@@ -320,6 +341,7 @@ class ForwardProxyServer:
                 sse_events=sse_events,
                 upstream_base_url=upstream_base,
             )
+            ctx.annotate_capture(record)
             await ctx.bus.publish(record)
             client_writer.write(b"HTTP/1.1 200 OK\r\n")
             client_writer.write(f"Content-Type: {resp_headers['Content-Type']}\r\n".encode())
@@ -510,6 +532,9 @@ class ForwardProxyServer:
                 headers[k.strip()] = v.strip()
 
         body = await _read_request_body(reader, headers)
+
+        if await self._bootstrap_response(method, url, writer):
+            return
 
         parsed = urlparse(url)
         path = parsed.path + (("?" + parsed.query) if parsed.query else "")
