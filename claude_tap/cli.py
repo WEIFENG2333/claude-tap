@@ -35,6 +35,7 @@ from claude_tap import manifest as manifest_mod
 from claude_tap import protocols as protocols_mod
 from claude_tap import update as update_mod
 from claude_tap._version import __version__
+from claude_tap.bootstrap import BootstrapResponses
 from claude_tap.certs import CertificateAuthority, ensure_ca
 from claude_tap.forward_proxy import ForwardProxyServer
 from claude_tap.live_viewer import LiveSink, LiveViewerServer
@@ -262,6 +263,11 @@ def _build_run_parser(sub: argparse._SubParsersAction) -> None:
             "when this succeeds it is treated as a successful capture even if the client exited non-zero"
         ),
     )
+    p.add_argument(
+        "--bootstrap-responses",
+        metavar="JSON",
+        help="Local startup responses for --export-prompt; unmatched non-model requests return 404",
+    )
     _add_proxy_options(p, default_host="127.0.0.1")
     _add_viewer_options(p)
 
@@ -371,6 +377,14 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(own)
+    args.bootstrap = None
+    if getattr(args, "bootstrap_responses", None):
+        if not args.export_prompt:
+            parser.error("--bootstrap-responses requires --export-prompt")
+        try:
+            args.bootstrap = BootstrapResponses.load(Path(args.bootstrap_responses))
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
     args.forward = forward
 
     if args.no_color:
@@ -476,7 +490,14 @@ async def _run_pipeline_async(args: argparse.Namespace, *, launch_client: bool) 
     ca_cert_path: Path | None = None
 
     capture_only = bool(launch_client and getattr(args, "export_prompt", None))
-    ctx = ProxyContext(protocols=protocols, target=target, bus=bus, session=session, capture_only=capture_only)
+    ctx = ProxyContext(
+        protocols=protocols,
+        target=target,
+        bus=bus,
+        session=session,
+        capture_only=capture_only,
+        bootstrap=getattr(args, "bootstrap", None),
+    )
     if capture_only:
         sys.stdout.write("[claude-tap] capture-only: exporting prompt without calling upstream\n")
 

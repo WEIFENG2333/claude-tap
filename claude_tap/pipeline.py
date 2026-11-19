@@ -17,9 +17,11 @@ import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Mapping
+from urllib.parse import urlsplit
 
 import aiohttp
 
+from claude_tap.bootstrap import BootstrapResponses
 from claude_tap.identity import extract_trace_context
 from claude_tap.protocols import Protocol, select_for_path
 from claude_tap.trace import EventBus
@@ -53,6 +55,21 @@ class ProxyContext:
     session: aiohttp.ClientSession
     capture_only: bool = False
     turn_counter: int = field(default=0)
+    bootstrap: BootstrapResponses | None = None
+
+    def __post_init__(self) -> None:
+        if self.bootstrap is not None and not self.capture_only:
+            raise ValueError("bootstrap responses require capture-only mode")
+
+    def bootstrap_response(self, method: str, url: str) -> tuple[int, object] | None:
+        protocol = self.protocol_for(urlsplit(url).path)
+        if self.bootstrap is None or (protocol is not None and protocol.captures(method, urlsplit(url).path)):
+            return None
+        return self.bootstrap.response(method, url)
+
+    def annotate_capture(self, record: dict) -> None:
+        if self.bootstrap is not None:
+            record["capture_environment"] = self.bootstrap.provenance()
 
     def next_turn(self) -> int:
         self.turn_counter += 1
