@@ -5,7 +5,7 @@
 追踪 AI 编程 CLI 实际发给模型 API 的内容。
 
 `claude-tap` 会把 Claude Code、Codex CLI、DeepSeek Harness、Gemini CLI、Grok Build、
-MiniMax Code、Antigravity CLI、Kimi Code、MiMo Code、OpenClaw、opencode、Pi、Oh My Pi 等工具
+Antigravity CLI、Kimi Code、MiMo Code、OpenClaw、opencode、Pi、Oh My Pi 等工具
 放到本地代理后面运行，记录请求、流式响应、工具列表、token 用量和 system prompt，
 并生成一个可以直接打开的 HTML trace。
 
@@ -172,7 +172,6 @@ claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format prompt-md -o 
 | DeepSeek Harness | `claude-tap dsh` | forward | prompt-export verified |
 | Gemini CLI | `claude-tap gemini` | reverse | verified |
 | Grok Build | `claude-tap grok` | reverse | prompt-export verified |
-| MiniMax Code | `claude-tap minimax-code` | reverse | prompt-export verified¹ |
 | Antigravity CLI | `claude-tap agy` | forward | prompt-export verified |
 | Kimi Code | `claude-tap kimi-code` | forward | prompt-export verified |
 | MiMo Code | `claude-tap mimo` | forward | prompt-export verified |
@@ -187,9 +186,6 @@ claude-tap export ./.traces/2026-05-06/trace_120137.jsonl --format prompt-md -o 
 | Qoder CLI | `claude-tap qoder` | reverse | wired |
 | Devin CLI | `claude-tap devin` | forward | wired |
 
-¹ MiniMax Code 目前发布的是桌面应用，并没有公开 CLI。这个客户端面向支持
-`MINIMAX_CODE_BASE_URL` 的 headless runtime launcher；Phistory 会提供并验证该 launcher。
-
 `verified` 表示做过真实 trace 捕获。`prompt-export verified` 表示真实 CLI 已经在
 capture-only 模式下发出过包含 prompt 的请求。`wired` 表示代码路径已实现并有单测，
 但完整真实运行可能还需要登录态、API key 或上游行为验证。
@@ -202,7 +198,7 @@ capture-only 模式下发出过包含 prompt 的请求。`wired` 表示代码路
 
 | 模式 | 用于 | 做法 |
 | --- | --- | --- |
-| reverse | Claude Code、Codex、Gemini、Grok Build、MiniMax Code、OpenClaw、Cursor、Qoder | 设置 base URL、CLI 参数或临时子进程配置，让 CLI 请求 `127.0.0.1` |
+| reverse | Claude Code、Codex、Gemini、Grok Build、OpenClaw、Cursor、Qoder | 设置 base URL、CLI 参数或临时子进程配置，让 CLI 请求 `127.0.0.1` |
 | forward | Codex App、DeepSeek Harness、Antigravity、opencode、Kimi、Kimi Code、MiMo、Pi、Oh My Pi、Hermes、iFlow、Devin | 设置 `HTTPS_PROXY`，并用本地 CA 拦截 HTTPS |
 
 两种模式都会尽量保留你原本配置的真实 upstream。如果你的 CLI 本来就走私有 relay 或区域 endpoint，

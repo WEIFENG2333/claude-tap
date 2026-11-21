@@ -486,20 +486,6 @@ def _grok_auth() -> AuthInfo:
 
 
 # ---------------------------------------------------------------------------
-# MiniMax Code — the Phistory launcher for the desktop app's local runtime
-# exposes its Anthropic-compatible provider through this base URL.
-# ---------------------------------------------------------------------------
-
-
-def _minimax_code_env(proxy_url: str) -> dict[str, str]:
-    return {"MINIMAX_CODE_BASE_URL": proxy_url}
-
-
-def _minimax_code_configured(env: Mapping[str, str]) -> str | None:
-    return _strip_url(env.get("MINIMAX_CODE_BASE_URL"))
-
-
-# ---------------------------------------------------------------------------
 # DeepSeek Harness — the native DeepSeek provider appends
 # ``/chat/completions`` to ``DEEPSEEK_BASE_URL``. Users can also select
 # OpenAI Responses, Anthropic Messages, and other pi-ai catalog providers
@@ -1428,18 +1414,6 @@ GROK = Client(
 )
 
 
-MINIMAX_CODE = Client(
-    name="minimax-code",
-    cmd="minimax-code",
-    label="MiniMax Code",
-    install_url="https://agent.minimax.io/download",
-    protocols=(ANTHROPIC,),
-    env_overrides=_minimax_code_env,
-    read_configured_upstream=_minimax_code_configured,
-    warn_on_missing_yolo=False,
-)
-
-
 DSH = Client(
     name="dsh",
     cmd="dsh",
@@ -1662,7 +1636,6 @@ _REGISTRY: dict[str, Client] = {
         CODEX_APP_CLIENT,
         GEMINI_CLI,
         GROK,
-        MINIMAX_CODE,
         DSH,
         OPENCODE,
         PI,

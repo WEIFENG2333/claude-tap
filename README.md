@@ -7,7 +7,7 @@
 Trace what AI coding CLIs actually send to their model APIs.
 
 `claude-tap` runs tools like Claude Code, Codex CLI, DeepSeek Harness, Gemini CLI, Grok Build,
-MiniMax Code, Antigravity CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, and Oh My Pi
+Antigravity CLI, Kimi Code, MiMo Code, OpenClaw, opencode, Pi, and Oh My Pi
 through a local proxy. It records requests, streaming responses, tools, token
 usage, and system prompts, then renders the run as a self-contained HTML trace.
 
@@ -193,7 +193,6 @@ CLIs; it does not install those CLIs for you.
 | DeepSeek Harness | `claude-tap dsh` | forward | prompt-export verified |
 | Gemini CLI | `claude-tap gemini` | reverse | verified |
 | Grok Build | `claude-tap grok` | reverse | prompt-export verified |
-| MiniMax Code | `claude-tap minimax-code` | reverse | prompt-export verified¹ |
 | Antigravity CLI | `claude-tap agy` | forward | prompt-export verified |
 | Kimi Code | `claude-tap kimi-code` | forward | prompt-export verified |
 | MiMo Code | `claude-tap mimo` | forward | prompt-export verified |
@@ -207,10 +206,6 @@ CLIs; it does not install those CLIs for you.
 | Cursor Agent | `claude-tap cursor` | reverse | wired |
 | Qoder CLI | `claude-tap qoder` | reverse | wired |
 | Devin CLI | `claude-tap devin` | forward | wired |
-
-¹ MiniMax Code currently ships as a desktop app rather than a public CLI.
-This client targets a headless runtime launcher that honors
-`MINIMAX_CODE_BASE_URL`; Phistory provides and validates that launcher.
 
 `verified` means a real trace has been captured. `prompt-export verified`
 means a real CLI emitted a prompt-bearing request in capture-only mode.
@@ -226,7 +221,7 @@ It uses two interception modes:
 
 | Mode | Used for | How |
 | --- | --- | --- |
-| reverse | Claude Code, Codex, Gemini, Grok Build, MiniMax Code, OpenClaw, Cursor, Qoder | set a base URL, CLI flag, or temporary child config so the CLI calls `127.0.0.1` |
+| reverse | Claude Code, Codex, Gemini, Grok Build, OpenClaw, Cursor, Qoder | set a base URL, CLI flag, or temporary child config so the CLI calls `127.0.0.1` |
 | forward | Codex App, DeepSeek Harness, Antigravity, opencode, Kimi, Kimi Code, MiMo, Pi, Oh My Pi, Hermes, iFlow, Devin | set `HTTPS_PROXY` and use a local CA to intercept HTTPS |
 
 In both modes, `claude-tap` tries to preserve your real upstream. If your CLI

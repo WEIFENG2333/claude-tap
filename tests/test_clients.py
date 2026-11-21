@@ -70,7 +70,6 @@ def test_registry_lists_known_clients():
         "kimi",
         "kimi-code",
         "mimo",
-        "minimax-code",
         "omp",
         "openclaw",
         "opencode",
@@ -128,11 +127,6 @@ def test_grok_env_redirects_api_and_auxiliary_requests():
         "GROK_XAI_API_BASE_URL": "http://127.0.0.1:8080/v1",
         "GROK_DISABLE_AUTOUPDATER": "1",
     }
-
-
-def test_minimax_code_env_redirects_local_runtime_provider():
-    env = clients.get("minimax-code").env_overrides("http://127.0.0.1:8080")
-    assert env == {"MINIMAX_CODE_BASE_URL": "http://127.0.0.1:8080"}
 
 
 def test_dsh_env_redirects_deepseek_adapter():
@@ -264,7 +258,6 @@ def test_single_protocol_clients():
     assert [p.name for p in clients.get("codexapp").protocols] == ["codexapp"]
     assert [p.name for p in clients.get("gemini").protocols] == ["gemini"]
     assert [p.name for p in clients.get("grok").protocols] == ["openai", "passthrough"]
-    assert [p.name for p in clients.get("minimax-code").protocols] == ["anthropic"]
 
 
 def test_multi_backend_clients_advertise_three_protocols():
@@ -287,7 +280,6 @@ def test_yolo_args_match_each_cli_published_flag():
         "opencode": ("--dangerously-skip-permissions",),
         "kimi": ("--yolo",),
         "kimi-code": ("--yolo",),
-        "minimax-code": (),
         "mimo": ("--never-ask",),
         "iflow": ("--yolo",),
         "cursor": ("--yolo",),
@@ -872,7 +864,6 @@ def test_other_clients_have_no_purge_list():
         "omp",
         "kimi",
         "kimi-code",
-        "minimax-code",
         "mimo",
         "iflow",
         "cursor",
@@ -907,7 +898,7 @@ def test_is_multi_backend_for_multi_protocol_clients():
 
 
 def test_is_multi_backend_false_for_single_protocol_clients():
-    for name in ("agy", "claude", "codex", "gemini", "minimax-code", "cursor", "qoder", "devin"):
+    for name in ("agy", "claude", "codex", "gemini", "cursor", "qoder", "devin"):
         assert not clients.is_multi_backend(clients.get(name)), name
 
 
@@ -917,7 +908,7 @@ def test_env_redirect_reliable_matches_client_capability():
     so they default to forward mode instead. Devin is single-backend but its
     rustls binary does not honor our env redirect, so it also defaults to
     forward mode."""
-    for name in ("claude", "codex", "gemini", "minimax-code", "cursor", "qoder", "openclaw"):
+    for name in ("claude", "codex", "gemini", "cursor", "qoder", "openclaw"):
         assert clients.get(name).env_redirect_reliable, name
     for name in ("agy", "dsh", "opencode", "pi", "omp", "kimi", "kimi-code", "mimo", "iflow", "hermes", "devin"):
         assert not clients.get(name).env_redirect_reliable, name
